@@ -6,15 +6,6 @@ library(here)
 motion_df <- readRDS(here("inst", "extdata", "motion_benchmark.rds")) %>%
   tibble()
 
-# TODO demonstrate the table below
-# single_subset <- subset(
-#   motion_df, (iternum==1) & (method=="3dSHORE") & 
-#     (denoising=="none") & (bval > 100) & (setting=="Affine"))
-# 
-# # Show the number of b>0's for each scheme (Table 1 in paper)
-# with(single_subset, table(percent_motion, scheme))
-# rm(single_subset)
-
 # --------------------------------#
 
 # Rename the methods
@@ -92,7 +83,6 @@ moved_long <- moved_long %>%
 error_df_wsetting <- moved_long %>%
   filter(source=="Error") %>%
   select(!source)
-usethis::use_data(error_df_wsetting, overwrite = TRUE)
 
 # get the sd of the error
 error_rmse_wsetting <- error_df_wsetting %>%
@@ -106,45 +96,40 @@ error_rmse_wsetting <- error_df_wsetting %>%
 # write out the error rmse df, this will be used for analyses
 usethis::use_data(error_rmse_wsetting, overwrite = TRUE)
 
-# rm(motion_df, m.moved, moved, motion_columns, drop_cols, est.mov,
-#    true.mov)
-
 #---------------------------------#
 # Load QC data and FWHM Correct it
 
-# qc_df <- droplevels(readRDS("data/qc_benchmark.rds"))
-# qc_df$scheme <- factor(
-#   qc_df$scheme, levels=c("ABCD", "HCP", "DSIQ5", "HASC55"))
-# qc_df$method <- recode(
-#   qc_df$method, "3dSHORE"="SHORELine", "eddy"="Eddy")
-# qc_df$denoising <- recode(
-#   qc_df$denoising, dwidenoise="MP-PCA", none="None")
-# id_cols <- c("scheme", "iternum", "method", "denoising", "percent_motion")
-# 
-# # Use to remove fwhm effect from NDC
-# fwhm_correct <- function(df, grp){
-#   df$fwhm.cen <- with(df, fwhm - mean(fwhm))
-#   
-#   # Partial out the fwhm effect in NDC
-#   ndc.model <- lm(t1_neighbor_corr ~ fwhm.cen, data=df)
-#   df$ndc.corrected <- ndc.model$coefficients[1] + residuals(ndc.model)
-#   
-#   return(tibble(df))
-# }
-# 
-# # Add a column for corrected ndc
-# resid_df <- qc_df %>% 
-#   group_by(method, setting, scheme, denoising, percent_motion) %>% 
-#   group_modify(~fwhm_correct(.x))
-# 
-# # Calculate the improvement in NDC relative to the original NDC
-# resid_df$improved.ndc <- with(
-#   resid_df, 
-#   t1_neighbor_corr - raw_neighbor_corr)
-# 
-# resid_df$improved.ndc.corrected <- with(
-#   resid_df, 
-#   ndc.corrected - raw_neighbor_corr)
-# 
-# qc_df <- resid_df
-# rm(resid_df)
+qc_df <- droplevels(readRDS(here("inst", "extdata", "qc_benchmark.rds"))) %>%
+  tibble::as_tibble()
+
+qc_df <- qc_df %>%
+  mutate(
+    scheme = factor(scheme, levels=c("ABCD", "HCP", "DSIQ5", "HASC55")),
+    method = recode(method, "3dSHORE"="SHORELine", "eddy"="Eddy"),
+    denoising = recode(denoising, dwidenoise="MP-PCA", none="None")
+    )
+
+# A function to remove fwhm effect from NDC
+fwhm_correct <- function(df, grp){
+  df$fwhm.cen <- with(df, fwhm - mean(fwhm))
+
+  # Partial out the fwhm effect in NDC
+  ndc.model <- lm(t1_neighbor_corr ~ fwhm.cen, data=df)
+  df$ndc.corrected <- ndc.model$coefficients[1] + residuals(ndc.model)
+
+  return(tibble(df))
+}
+
+# Add a column for corrected ndc
+resid_df <- qc_df %>%
+  group_by(method, setting, scheme, denoising, percent_motion) %>%
+  group_modify(~fwhm_correct(.x))
+
+# Calculate the improvement in NDC relative to the original NDC
+qc_df <- resid_df %>%
+  mutate(
+    improved.ndc = t1_neighbor_corr - raw_neighbor_corr,
+    improved.ndc.corrected = ndc.corrected - raw_neighbor_corr
+    )
+
+usethis::use_data(qc_df, overwrite = TRUE)

@@ -5,120 +5,54 @@ date: "4/16/2022"
 output: html_document
 ---
 
+# Libraries & Setup
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-# install.packages(c("tidyverse", "broom", "reshape2", "ggpattern", "emmeans"))
 library(tidyverse)
 library(broom)
-library(reshape2)
 library(ggpattern)
 library(emmeans)
+library(gtsummary)
+library(gt)
 ```
 
-## 0 Prepare estimated motion and ground truth motion
+The data are available on OSF at [this link](osf.io/7twne).
+This package internally downloads and cleans them for
+your convenience. They're available like so:
 
-First, download the head motion estimate results from the datalad dataset at osf.io/7twne.
-
-```{r get_data}
-
-# Download the data
-dir.create(file.path(getwd(), "data"))
-dir.create(file.path(getwd(), "figures"))
-download.file("https://osf.io/c5pfj/download", "data/motion_benchmark.rds")
-# Download the QC data
-download.file("https://osf.io/9jz76/download", "data/qc_benchmark.rds")
+```{r}
+data("motion_df") # for viewing the preprocessed data
+data("error_rmse_wsetting") # for analysis of estimated motion
 ```
 
-We examine the images where motion was actually simulated. Their data is 
-collected into `motion_df`.
+# Sample
 
-```{r get_moved}
-motion_df <- readRDS("inst/extdata/motion_benchmark.rds")
-single_subset <- subset(
-  motion_df, (iternum==1) & (method=="3dSHORE") & 
-    (denoising=="none") & (bval > 100) & (setting=="Affine"))
+The table below shows the number of `b0`'s for each scheme:
 
-# Show the number of b>0's for each scheme (Table 1 in paper)
-with(single_subset, table(percent_motion, scheme))
-rm(single_subset)
+```{r}
+# TODO demonstrate the table in the paper
 
-# Rename the methods
-motion_df$methodname <- "Eddy"
-motion_df$methodname[motion_df$method == "3dSHORE"] = "SHORELine"
-motion_df$method <- motion_df$methodname
-motion_df$methodname <- NULL
+motion_df %>%
+  filter(
+    iternum == 1 &
+      method == "SHORELine" &
+      denoising == "none" &
+      bval > 100 &
+      setting == "Affine") %>%
+   select(percent_motion, scheme) %>%
+   table()
 ```
 
 
-The errors are converted from radians to degrees. At the end of this cell 
-we also extract only the b>0 volumes. Both Eddy and SHORELine use different
+
+Errors for rotation are converted from radians to degrees, and
+we also extract only the $b > 0$ volumes. Both Eddy and SHORELine use different
 methods (non-GP and non-SHORE) for motion-correcting these images.
 
-```{r calculate_errors}
-# Calculate the errors
-for (motion_axis in c("x", "y", "z")){
-  for (motion_type in c("trans", "rot")){
-    est.mov.name <- paste0(motion_type, "_", motion_axis)
-    est.mov <- motion_df[est.mov.name]
-    if (motion_type == "rot"){
-      est.mov <- est.mov * 180 / pi
-      motion_df[est.mov.name] <- est.mov
-    }
-    true.mov <- motion_df[paste0("true_", motion_type, "_", motion_axis)]
-    error.col <- paste("error", motion_type, motion_axis, sep="_")
-    motion_df[error.col] <- true.mov - est.mov
-  }
-}
+# Analysis
 
-# Get only the columns for the motion analysis
-motion_columns <- c(
-  "bval", "grad_x", "grad_y", "grad_z", "iternum", "scheme", "method", 
-  "setting", "percent_motion", "error_trans_x", "error_trans_y",
-  "error_trans_z", "error_rot_x", "error_rot_y", "error_rot_z",
-  "true_trans_x", "true_trans_y", "true_trans_z", "true_rot_x", 
-  "true_rot_y", "true_rot_z", "trans_x", "trans_y", "trans_z", "rot_x",
-  "rot_y", "rot_z", "volnum", "denoising")
-moved <- motion_df[, motion_columns] %>%
-  bind_cols(select(motion_df, matches("DWI")))
-
-
-m.moved <- melt(moved,
-    measure.vars = c(
-      "error_trans_x", "error_trans_y", "error_trans_z", "error_rot_x", 
-      "error_rot_y", "error_rot_z", "true_trans_x", "true_trans_y", 
-      "true_trans_z", "true_rot_x", "true_rot_y", "true_rot_z", "trans_x",
-      "trans_y", "trans_z", "rot_x", "rot_y", "rot_z"))
-
-m.moved$motion.type <- 'Translation'
-m.moved$motion.type[grepl('*rot_', m.moved$variable)] <- 'Rotation'
-table(m.moved$motion.type)
-m.moved$axis <- gsub(".*_([xyz])$", '\\1', m.moved$variable)
-m.moved$source <- "Estimated"
-m.moved$source[grep('true', m.moved$variable)] <- "Truth"
-m.moved$source[grep('error', m.moved$variable)] <- "Error"
-m.moved$percent_motion <- as.factor(m.moved$percent_motion)
-m.moved$scheme <- factor(m.moved$scheme,
-                         levels=c("ABCD", "HCP", "DSIQ5", "HASC55"))
-drop_cols <- c("DWIBiasCorrect_pre", "grad_x", "grad_y", "grad_z",
-               "DWIBiasCorrect_post", "DWIBiasCorrect_change", "DWIDenoise_pre",
-               "DWIDenoise_post", "DWIDenoise_change", "variable")
-error_df_wsetting <- subset(m.moved, (source=="Error"))  %>% 
-  select(-one_of(drop_cols))
-error_df_wsetting$source <- NULL
-
-# get the sd of the error
-error_rmse_wsetting <- error_df_wsetting %>%
-  # Select only the b>0 images, since these use the model
-  filter(bval > 100) %>%
-  group_by(denoising, scheme, motion.type, method, percent_motion, iternum, setting) %>% 
-  summarise(rmse=sqrt(sum(value^2)/sum(is.finite(value))),
-            mean_error=mean(value),
-            sd_error=sd(value))
-
-#rm(motion_df, m.moved, moved, motion_columns, drop_cols, est.mov, true.mov)
-```
-
-## 1 is there an RMSE difference between the Rigid/Affine and Linear/Quadratic settings?
+## 1. Is there an RMSE difference between the Rigid/Affine and Linear/Quadratic settings?
 
 We tested Rigid and Affine transformation models for SHORELine and Linear and 
 Quadratic models in Eddy. In Eddy, the models only affect Eddy current correction
@@ -139,10 +73,10 @@ setting_tests <- error_rmse_wsetting %>%
   unnest(test)
 
 # Adjust the p-values and order them by the largest absolute effects
-setting_tests$p.value.adj <- p.adjust(setting_tests$p.value)
-significant.effects <- subset(setting_tests, (p.value.adj < 0.01))
-significant.effects[order(-abs(significant.effects$estimate)),]
-rm(setting_tests, significant.effects)
+setting_tests %>%
+  mutate(p_val_adjusted = p.adjust(p.value)) %>%
+  filter(p_val_adjusted < 0.01) %>%
+  arrange(-abs(estimate))
 ```
 
 We can see that all the effects are for SHORELine and the estimates are
@@ -151,19 +85,18 @@ estimates are all tiny, we will simplify subsequent comparisons by only choosing
 rigid. Rigid also has the benefit of much shorter run times than Affine. As 
 expected, there are no differences for Eddy.
 
-This section subsets the RMSE values so to just those we're using for the 
+This section subsets the RMSE values to just those we're using for the 
 rest of the comparisons:
 
 ```{r compare_rmse}
 
 # Only look at one setting per method
 error_rmse <- error_rmse_wsetting %>% 
-  filter(setting %in% c("Rigid", "Quadratic"))
-error_rmse$setting <- NULL
-rm(error_rmse_wsetting, error_df_wsetting)
+  filter(setting %in% c("Rigid", "Quadratic")) %>%
+  select(-setting)
 ```
 
-## 2 Summarise motion detection errors
+## 2. Summarization of Motion Detection Errors
 
 Here we summarize how big errors were in estimating head motion. We first look
 at the distribution of errors to check that it's centered around zero. This is 
@@ -173,8 +106,7 @@ Next we see what the standard deviation
 of the error is. This tells us, on average, the amount of degrees or mm we 
 can expect an error to be for each method.
 
-```{r plot_rmse_data_means}
-
+```{r plot_rmse_data_means, cache=TRUE}
 rmse_summaries <- error_rmse %>%
   group_by(denoising, scheme, motion.type, method, percent_motion) %>%
   summarise(mean_rmse=mean(rmse), 
@@ -183,11 +115,11 @@ rmse_summaries <- error_rmse %>%
             group_mean_error=mean(mean_error),
             sd_mean_error=sd(mean_error))
 
-rmse_summaries$motion.type <- recode(
-  rmse_summaries$motion.type,
-  Rotation="Rotation (degrees)",
-  Translation="Translation (mm)"
-  )
+rmse_summaries <- rmse_summaries %>%
+  mutate(motion.type = case_when(
+    str_detect(motion.type, "Rotation")  ~ "Rotation (degrees)",
+    str_detect(motion.type, "Translation")  ~ "Translation (mm)",
+  ))
 
 pd=position_dodge(width=0.7, preserve="single")
 
@@ -224,12 +156,6 @@ error_mean_plt <-  ggplot(
        pattern_alpha="Denoising\nMethod") +
   coord_fixed()
 
-ggsave("figures/error_mean_plot.svg",
-       plot=error_mean_plt,
-       height=4,
-       width=7.9,
-       units="in")
-
 
 # Summarize the motion rmse in the different cells
 rmse_plt <-  ggplot(
@@ -265,30 +191,44 @@ rmse_plt <-  ggplot(
        pattern_alpha="Denoising\nMethod") +
   coord_fixed()
 
+```
 
-ggsave("figures/rmse_plot.svg",
+```{r, save plots, cache=TRUE}
+ggsave(here("figures/error_mean_plot.svg"),
+       plot=error_mean_plt,
+       height=4,
+       width=7.9,
+       units="in")
+
+ggsave(here("figures/rmse_plot.svg"),
        plot=rmse_plt,
        height=4,
        width=7.9,
        units="in")
-error_mean_plt
-rmse_plt
-
-
 ```
 
-Get the means out so we can report it in the paper. This is also how they were 
+
+
+```{r, cache=TRUE}
+error_mean_plt
+```
+
+```{r, cache=TRUE}
+rmse_plt
+```
+
+Here is how means were reported in the paper, and also how they were 
 calculated for the OHBM poster.
 
 ```{r get_means}
 errs <- error_rmse %>% group_by(motion.type) %>% 
   summarise(mean_mean_error=mean(mean_error),
             sd_mean_error=sd(mean_error))
-errs
+tbl_summary(error_rmse, by = motion.type, statistic = list(all_continuous() ~ "{mean} ({sd})"), include = )
 
 ```
 
-## 3 Compare Performance on Sampling Schemes
+## 3. Compare Performance on Sampling Schemes
 
 There are 4 sampling schemes compared here. How well do the motion correction
 methods work on each?
@@ -363,15 +303,19 @@ directions_plt <-  ggplot(
        color = "Method",
        linetype= "Denoising\nMethod",
        shape="Scheme\nType")
+```
 
-directions_plt
 
-ggsave("figures/directions_plot.svg",
+```{r, cache=TRUE}
+ggsave(here("figures", "directions_plot.svg"),
        plot=directions_plt,
        height=4,
        width=7.9,
        units="in")
+```
 
+```{r, cache=TRUE}
+directions_plt
 ```
 
 This is just another view of the previous plot, but interesting in that 
@@ -406,14 +350,28 @@ rotation_shell_model <- lm(
   rmse ~ scheme_type * num_directions + denoising + percent_motion,
   data=subset(error_rmse_dirs, motion.type=="Rotation"))
 
-summary(rotation_shell_model)
-
 translation_shell_model <- lm(
   rmse ~ scheme_type * num_directions + denoising + percent_motion,
   data=subset(error_rmse_dirs, motion.type=="Translation"))
 
-summary(translation_shell_model)
+```
 
+```{r}
+tbl_regression(
+  translation_shell_model, 
+  show_single_row=c("scheme_type", "denoising"), intercept=TRUE) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels()
+```
+
+```{r}
+tbl_regression(
+  rotation_shell_model, 
+  show_single_row=c("scheme_type", "denoising"), intercept=TRUE) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels()
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -445,8 +403,14 @@ summary(rotation_rmse_model_paired)
 translation_rmse_model_paired <- lm(
   shore_difference ~ scheme * denoising * percent_motion,
   data=subset(paired_error, motion.type=="Translation"))
-summary(translation_rmse_model_paired)
+```
 
+```{r}
+tbl_regression(
+  translation_rmse_model_paired, intercept=TRUE) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels()
 ```
 
 
@@ -486,49 +450,12 @@ and FWHM of the final outputs between the two methods. The NDC and FWHM of
 the results are related, so we used the same method as in Cieslak et al. 2021
 where FWHM is partialled out from the NDC measurements.
 
-## Load the data and FWHM-correct it
+## Test the Settings
 
-```{r load_qc}
-qc_df <- droplevels(readRDS("data/qc_benchmark.rds"))
-qc_df$scheme <- factor(
-  qc_df$scheme, levels=c("ABCD", "HCP", "DSIQ5", "HASC55"))
-qc_df$method <- recode(
-  qc_df$method, "3dSHORE"="SHORELine", "eddy"="Eddy")
-qc_df$denoising <- recode(
-  qc_df$denoising, dwidenoise="MP-PCA", none="None")
-id_cols <- c("scheme", "iternum", "method", "denoising", "percent_motion")
-
-# Use to remove fwhm effect from NDC
-fwhm_correct <- function(df, grp){
-  df$fwhm.cen <- with(df, fwhm - mean(fwhm))
-  
-  # Partial out the fwhm effect in NDC
-  ndc.model <- lm(t1_neighbor_corr ~ fwhm.cen, data=df)
-  df$ndc.corrected <- ndc.model$coefficients[1] + residuals(ndc.model)
-
-  return(tibble(df))
-}
-
-# Add a column for corrected ndc
-resid_df <- qc_df %>% 
-  group_by(method, setting, scheme, denoising, percent_motion) %>% 
-  group_modify(~fwhm_correct(.x))
-
-# Calculate the improvement in NDC relative to the original NDC
-resid_df$improved.ndc <- with(
-  resid_df, 
-  t1_neighbor_corr - raw_neighbor_corr)
-
-resid_df$improved.ndc.corrected <- with(
-  resid_df, 
-  ndc.corrected - raw_neighbor_corr)
-
-qc_df <- resid_df
-rm(resid_df)
-
+```{r}
+data("qc_df")
 ```
 
-## Test the Settings
 
 Above we tested the settings to see if Linear/Quadratic or Rigid/Affine 
 made a difference on motion estimation accuracy. Linear/Quadratic showed no
@@ -566,7 +493,7 @@ qc_df$setting <- NULL
 
 ## How does the fwhm compare?
 
-```{r fwhm}
+```{r fwhm_plot}
 ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) + 
   geom_hline(yintercept = 0) +
   geom_violin(draw_quantiles = 0.5) + 
@@ -581,15 +508,20 @@ ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) +
        x = "Percent Motion Volumes", 
        fill = "Method") +
   facet_grid(.~scheme) + ylim(3.5,4.5)
+```
 
+
+```{r fwhm_stats}
 # What about if we make a paired comparison?
+id_cols <- c("scheme", "iternum", "method", "denoising", "percent_motion")
 paired_fwhm <- qc_df %>% 
   select(one_of(c(id_cols, "fwhm"))) %>%
   spread(method, fwhm, sep="_") %>%
-  mutate(fwhm_diff=method_SHORELine - method_Eddy) %>%
+  mutate(fwhm_diff=method_SHORELine - method_Eddy,
+         percent_motion = as.factor(percent_motion)) %>%
   select(-starts_with("method_"))
 fwhm_diff_model <- lm(
-  fwhm_diff ~ as.factor(percent_motion) + scheme + denoising,
+  fwhm_diff ~ percent_motion + scheme + denoising,
   data=paired_fwhm)
 summary(fwhm_diff_model)
 
@@ -656,13 +588,15 @@ ndc_mean_plt <-  ggplot(
        fill = "Method",
        pattern_alpha="Denoising\nMethod")
 ndc_mean_plt
-ggsave("figures/ndc_mean_plot.svg",
+
+```
+
+```{r}
+ggsave(here("figures", "ndc_mean_plot.svg"),
        plot=ndc_mean_plt,
        height=3,
        width=7.9,
        units="in")
-
-
 ```
 
 The NDC scores in and of themselves don't mean much across sampling schemes,
@@ -674,25 +608,24 @@ The second row shows the percent improvement in NDC relative to the raw scans.
 This is pretty remarkable. To do statistical tests, we will center the raw
 NDC *within* their percent motion category
 
-```{r center_raw_ndc}
-
+```{r}
 qc_df <- subset(qc_df, scheme %in% c("ABCD", "HCP"))
 
 ggplot(qc_df, aes(x=percent_motion, y=raw_neighbor_corr, color=scheme)) + 
   geom_jitter() +
   ggtitle("Unprocessed data NDC values")
+```
 
-qc_df_ctr <- qc_df %>%
+
+```{r center_raw_ndc}
+qc_df <- qc_df %>%
    group_by(percent_motion) %>%
    mutate(pct_motion_mean=median(raw_neighbor_corr),
           centered_raw_ndc=raw_neighbor_corr - pct_motion_mean)
 
-ggplot(qc_df_ctr, aes(x=percent_motion, y=centered_raw_ndc, color=scheme)) + 
+ggplot(qc_df, aes(x=percent_motion, y=centered_raw_ndc, color=scheme)) + 
   geom_jitter() +
   ggtitle("Unprocessed data NDC values: Centered by percent motion")
-
-qc_df <- qc_df_ctr
-rm(qc_df_ctr)
 ```
 
 
