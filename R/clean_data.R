@@ -1,7 +1,10 @@
 # code to prepare the datasets
 
-library(tidyverse)
+library(dplyr)
+library(tibble)
 library(here)
+library(stringr)
+library(tidyr)
 
 motion_df <- readRDS(here("inst", "extdata", "motion_benchmark.rds")) %>%
   tibble()

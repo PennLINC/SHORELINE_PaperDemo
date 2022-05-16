@@ -25,4 +25,4 @@ also available in the `/R` folder.
 
 You can also reproduce the analyses for yourself by downloading this package with
 `remotes::install_github("PennLINC/SHORELINE_PaperDemo")` and emulating the
-Article, or online using Binder...
+Article, or online using Binder.

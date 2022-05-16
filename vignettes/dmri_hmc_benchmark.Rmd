@@ -12,20 +12,23 @@ vignette: >
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
+library(dplyr)
+library(tidyr)
 library(broom)
 library(ggpattern)
 library(emmeans)
 library(gtsummary)
 library(gt)
 library(here)
+library(stringr)
+library(ggplot2)
 
 library(SHORELINEPaper) # for the data
 ```
 
 The data are available on OSF at [this link](osf.io/7twne).
 This package internally downloads and cleans them for
-your convenience. They're available like so:
+your convenience. They're available preprocessed within the package:
 
 ```{r}
 data("motion_df") # for viewing the preprocessed data
@@ -39,15 +42,34 @@ The table below shows the number of `b0`'s for each scheme:
 ```{r}
 # TODO demonstrate the table in the paper
 
-motion_df %>%
-  filter(
-    iternum == 1 &
-      method == "SHORELine" &
-      denoising == "none" &
-      bval > 100 &
-      setting == "Affine") %>%
-   select(percent_motion, scheme) %>%
-   table()
+# motion_df %>%
+# filter(
+#   iternum == 1 &
+#     method == "SHORELine" &
+#     denoising == "none" &
+#     bval > 100 &
+#     setting == "Affine") %>%
+#    select(percent_motion, scheme) %>%
+#    table()
+
+# motion_df %>%
+#   mutate( Type = case_when(str_detect(scheme, "ABCD|HCP")  ~ "Shelled",
+#                      str_detect(scheme, "DSI")      ~ "Cartesian",
+#                      str_detect(scheme, "HASC")     ~ "Random"
+#                      )
+#     ) %>%
+#   filter(
+#   iternum == 1 &
+#     method == "SHORELine" &
+#     denoising == "none" &
+#     bval > 100 &
+#     setting == "Affine") %>%
+#   group_by(scheme, Type) %>%
+#   filter(bval > 0)# %>%
+  #summarise(bval_grth_0 = n(),
+  #          max_b = max(bval)) %>%
+  
+  #View()
 ```
 
 
@@ -56,7 +78,7 @@ Errors for rotation are converted from radians to degrees, and
 we also extract only the $b > 0$ volumes. Both Eddy and SHORELine use different
 methods (non-GP and non-SHORE) for motion-correcting these images.
 
-# Analysis
+# Motion Analysis
 
 ## 1. Is there an RMSE difference between the Rigid/Affine and Linear/Quadratic settings?
 
@@ -82,7 +104,40 @@ setting_tests <- error_rmse_wsetting %>%
 setting_tests %>%
   mutate(p_val_adjusted = p.adjust(p.value)) %>%
   filter(p_val_adjusted < 0.01) %>%
-  arrange(-abs(estimate))
+  arrange(motion.type, scheme, percent_motion, denoising, -abs(estimate)) %>%
+  select(motion.type, scheme, percent_motion, denoising, everything(), -hmc_method) %>%
+  filter(motion.type == "Rotation") -> setting_tests_rotation
+
+setting_tests %>%
+  mutate(p_val_adjusted = p.adjust(p.value)) %>%
+  filter(p_val_adjusted < 0.01) %>%
+  arrange(motion.type, scheme, percent_motion, denoising, -abs(estimate)) %>%
+  select(motion.type, scheme, percent_motion, denoising, everything(), -hmc_method) %>%
+  filter(motion.type != "Rotation") -> setting_tests_translation
+
+setting_tests_rotation %>%
+  select(scheme, everything(), -motion.type) %>%      # reorder columns
+  mutate(across(where(is.factor), as.character)) %>%  # convert to char for empty strings
+  
+  # insert empty strings for every group where the values are duplicated
+  group_by(scheme, percent_motion) %>%
+  mutate_at(vars(scheme:percent_motion), ~ replace(.x, duplicated(.x), "")) %>%
+  ungroup() %>%
+  select(scheme:statistic, contains("conf"), p_val_adjusted) %>%
+  
+  # precision for the confidence intervals
+  mutate(across(estimate:conf.high, ~ round(.x, 3))) %>%
+  
+  
+  gt() %>%
+  
+  # string format confidence intervals
+  cols_merge(columns = c(conf.low, conf.high), pattern = "{1}, {2}") %>%
+  cols_label(
+    conf.low = "95% CI"
+  ) %>%
+  tab_header("t.test for Difference Between ")
+
 ```
 
 We can see that all the effects are for SHORELine and the estimates are
@@ -199,7 +254,15 @@ rmse_plt <-  ggplot(
 
 ```
 
-```{r, save plots, cache=TRUE}
+```{r, error_mean_plot, cache=TRUE}
+error_mean_plt
+```
+
+```{r, rmse_plot, cache=TRUE}
+rmse_plt
+```
+
+```{r, save plots, cache=TRUE, include=FALSE}
 ggsave(here("vignettes","error_mean_plot.svg"),
        plot=error_mean_plt,
        height=4,
@@ -211,16 +274,6 @@ ggsave(here("vignettes","rmse_plot.svg"),
        height=4,
        width=7.9,
        units="in")
-```
-
-
-
-```{r, cache=TRUE}
-error_mean_plt
-```
-
-```{r, cache=TRUE}
-rmse_plt
 ```
 
 Here is how means were reported in the paper, and also how they were 
@@ -312,7 +365,7 @@ directions_plt <-  ggplot(
 ```
 
 
-```{r, cache=TRUE}
+```{r, cache=TRUE, include=FALSE}
 ggsave(here("vignettes","directions_plot.svg"),
        plot=directions_plt,
        height=4,
@@ -363,21 +416,34 @@ translation_shell_model <- lm(
 ```
 
 ```{r}
-tbl_regression(
+translation_rmse_tab <- tbl_regression(
   translation_shell_model, 
-  show_single_row=c("scheme_type", "denoising"), intercept=TRUE) %>%
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
   bold_p() %>%
   bold_labels() %>% 
   italicize_levels()
+
+rotation_rmse_tab <- tbl_regression(
+  rotation_shell_model, 
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels()
+  
 ```
 
+
 ```{r}
-tbl_regression(
-  rotation_shell_model, 
-  show_single_row=c("scheme_type", "denoising"), intercept=TRUE) %>%
-  bold_p() %>%
-  bold_labels() %>% 
-  italicize_levels()
+tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Translation", "Rotation")) %>%
+  as_gt() %>%
+  fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
+  tab_header(title = "RMSE of Predicted Motion",
+             subtitle = "Main Effects of Denoising, Number of Volumes, and Percent Motion, including interactions with Shell Scheme") %>%
+  tab_source_note(md("*This data is simulated*"))
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -403,8 +469,6 @@ paired_error <- error_rmse %>%
 rotation_rmse_model_paired <- lm(
   shore_difference ~ scheme * denoising * percent_motion,
   data=subset(paired_error, motion.type=="Rotation"))
-summary(rotation_rmse_model_paired)
-
 
 translation_rmse_model_paired <- lm(
   shore_difference ~ scheme * denoising * percent_motion,
@@ -412,13 +476,34 @@ translation_rmse_model_paired <- lm(
 ```
 
 ```{r}
-tbl_regression(
-  translation_rmse_model_paired, intercept=TRUE) %>%
+translation_rmse_paired_tab <- tbl_regression(
+  translation_rmse_model_paired, 
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels()
+
+rotation_rmse_paired_tab <- tbl_regression(
+  rotation_rmse_model_paired, 
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
   bold_p() %>%
   bold_labels() %>% 
   italicize_levels()
 ```
 
+
+```{r}
+tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spanner = c("Translation", "Rotation")) %>%
+  as_gt() %>%
+  fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
+  tab_header(title = "RMSE of Predicted Motion Using Paired Eddy & SHORELine Estimates",
+             subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme") %>%
+  tab_source_note(md("*This data is simulated*"))
+```
 
 Plot the RMSE differences
 ```{r rmse_diffs_boxplot}
@@ -456,7 +541,7 @@ and FWHM of the final outputs between the two methods. The NDC and FWHM of
 the results are related, so we used the same method as in Cieslak et al. 2021
 where FWHM is partialled out from the NDC measurements.
 
-## Test the Settings
+## 1. Test the Settings
 
 ```{r}
 data("qc_df")
@@ -475,10 +560,11 @@ setting_tests <- qc_df %>%
   unnest(test)
 
 # Adjust the p-values and order them by the largest absolute effects
-setting_tests$p.value.adj <- p.adjust(setting_tests$p.value)
-significant.effects <- subset(setting_tests, (p.value.adj < 0.01))
-significant.effects[order(-abs(significant.effects$estimate)),]
-
+setting_tests <- setting_tests %>%
+  mutate(p.value.adj = p.adjust(p.value))
+# 
+# significant.effects <- subset(setting_tests, (p.value.adj < 0.01))
+# significant.effects[order(-abs(significant.effects$estimate)),]
 ```
 
 Recall here we're testing NDC, which is better when higher. The t-tests work 
@@ -495,12 +581,13 @@ of a more powerful Eddy Current correction later.
 ```{r qc_select_setting}
 qc_df <- subset(qc_df, setting %in% c("Rigid", "Quadratic"))
 qc_df$setting <- NULL
+
 ```
 
 ## How does the fwhm compare?
 
 ```{r fwhm_plot}
-ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) + 
+fwhm_smooth_plot <- ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) + 
   geom_hline(yintercept = 0) +
   geom_violin(draw_quantiles = 0.5) + 
   scale_fill_manual(
@@ -514,12 +601,23 @@ ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) +
        x = "Percent Motion Volumes", 
        fill = "Method") +
   facet_grid(.~scheme) + ylim(3.5,4.5)
+
+fwhm_smooth_plot
+```
+
+```{r}
+ggsave(here("vignettes","fwhm_smooth_plot.svg"),
+       plot=fwhm_smooth_plot,
+       height=3,
+       width=7.9,
+       units="in")
 ```
 
 
 ```{r fwhm_stats}
 # What about if we make a paired comparison?
 id_cols <- c("scheme", "iternum", "method", "denoising", "percent_motion")
+
 paired_fwhm <- qc_df %>% 
   select(one_of(c(id_cols, "fwhm"))) %>%
   spread(method, fwhm, sep="_") %>%
@@ -529,9 +627,24 @@ paired_fwhm <- qc_df %>%
 fwhm_diff_model <- lm(
   fwhm_diff ~ percent_motion + scheme + denoising,
   data=paired_fwhm)
-summary(fwhm_diff_model)
-
 ```
+
+```{r}
+tbl_regression(
+  fwhm_diff_model,
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels() %>%
+  as_gt() %>%
+  tab_header(title = "Linear Model Predicting FWHM (Eddy — Shoreline) of Each Scan",
+             subtitle = "Main Effects of Percent Motion, Scheme, and Denoising") %>%
+  tab_source_note(md("*This data is simulated*"))
+  
+```
+
 
 ## Comparing FWHM-corrected NDC between SHORELine and Eddy
 
@@ -560,6 +673,9 @@ ndc_summaries$measure <- 'Mean Preprocessed NDC'
 qc_summaries <- rbind(ndc_summaries, improved_ndc_summaries)
 qc_summaries$percent_motion <- as.factor(qc_summaries$percent_motion)
 
+```
+
+```{r}
 pd=position_dodge(width=0.7, preserve="single")
 
 ndc_mean_plt <-  ggplot(
@@ -593,8 +709,12 @@ ndc_mean_plt <-  ggplot(
        x = "Percent Motion Volumes",
        fill = "Method",
        pattern_alpha="Denoising\nMethod")
+```
+
+```{r}
 ndc_mean_plt
 ```
+
 
 ```{r}
 ggsave(here("vignettes","ndc_mean_plot.svg"),
@@ -644,5 +764,19 @@ paired_ndc <- qc_df %>%
 ndc_diff_model <- lm(
   ndc_diff ~ percent_motion + denoising + scheme,
   data=paired_ndc)
-summary(ndc_diff_model)
 ```
+
+```{r}
+tbl_regression(
+  ndc_diff_model,
+  intercept=TRUE,
+  estimate_fun = ~style_number(.x, digits=3)
+  ) %>%
+  bold_p() %>%
+  bold_labels() %>% 
+  italicize_levels() %>%
+  as_gt() %>%
+  tab_header(title = "NDC Model") %>%
+  tab_source_note(md("*This data is simulated*"))
+```
+
