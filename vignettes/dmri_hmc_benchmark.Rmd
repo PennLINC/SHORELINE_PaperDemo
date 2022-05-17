@@ -135,9 +135,34 @@ setting_tests_rotation %>%
   cols_merge(columns = c(conf.low, conf.high), pattern = "{1}, {2}") %>%
   cols_label(
     conf.low = "95% CI"
-  ) %>%
-  tab_header("t.test for Difference Between ")
+  ) -> setting_tests_rotation_gt
 
+setting_tests_translation %>%
+  select(scheme, everything(), -motion.type) %>%      # reorder columns
+  mutate(across(where(is.factor), as.character)) %>%  # convert to char for empty strings
+  
+  # insert empty strings for every group where the values are duplicated
+  group_by(scheme, percent_motion) %>%
+  mutate_at(vars(scheme:percent_motion), ~ replace(.x, duplicated(.x), "")) %>%
+  ungroup() %>%
+  select(scheme:statistic, contains("conf"), p_val_adjusted) %>%
+  
+  # precision for the confidence intervals
+  mutate(across(estimate:conf.high, ~ round(.x, 3))) %>%
+  
+  
+  gt() %>%
+  
+  # string format confidence intervals
+  cols_merge(columns = c(conf.low, conf.high), pattern = "{1}, {2}") %>%
+  cols_label(
+    conf.low = "95% CI"
+  ) -> setting_tests_translation_gt
+
+```
+
+```{r}
+#tbl_merge(list(setting_tests_translation_gt, setting_tests_rotation_gt), tab_spanner = c("Translation", "Rotation"))
 ```
 
 We can see that all the effects are for SHORELine and the estimates are
@@ -187,17 +212,23 @@ pd=position_dodge(width=0.7, preserve="single")
 error_mean_plt <-  ggplot(
     rmse_summaries,
     aes(x=percent_motion, y=group_mean_error, 
-        fill=method, pattern_alpha=denoising)) +
-  scale_pattern_type_discrete(
-    choices=c("hatch")) +
-  geom_col_pattern(position=pd,
-                   width=0.5,
-                   pattern_spacing=0.03,
-                   pattern_fill="black",
-                   color="black") +
-  scale_pattern_alpha_discrete(
-    range=c(0,.7),
-    labels=c("MP-PCA", "None")) +
+        fill=method#, pattern_alpha=denoising
+        )) +
+  #scale_pattern_type_discrete(choices=c("hatch")) +
+  # geom_col_pattern(position=pd,
+  #                  width=0.5,
+  #                  pattern_spacing=0.03,
+  #                  pattern_fill="black",
+  #                  color="black") +
+    geom_col(#position=pd,
+                   #width=0.5,
+                   #pattern_spacing=0.03,
+                   #pattern_fill="black",
+                   #color="black"
+             ) +
+  # scale_pattern_alpha_discrete(
+  #   range=c(0,.7),
+  #   labels=c("MP-PCA", "None")) +
   geom_errorbar(
     aes(ymax=group_mean_error+mean_rmse, 
         ymin=group_mean_error-mean_rmse, 
@@ -213,11 +244,19 @@ error_mean_plt <-  ggplot(
   labs(title = "Head Motion Estimate Error", 
        y = "Mean Error (±Mean RMSE)", 
        x = "Percent Motion Volumes", 
-       fill = "Method",
-       pattern_alpha="Denoising\nMethod") +
-  coord_fixed()
+       fill = "Method"#,
+       #pattern_alpha="Denoising\nMethod"
+       ) #+
+  #coord_fixed()
 
+```
 
+```{r, error_mean_plot, cache=TRUE}
+#error_mean_plt
+
+```
+
+```{r}
 # Summarize the motion rmse in the different cells
 rmse_plt <-  ggplot(
     rmse_summaries,
@@ -254,26 +293,22 @@ rmse_plt <-  ggplot(
 
 ```
 
-```{r, error_mean_plot, cache=TRUE}
-error_mean_plt
-```
-
 ```{r, rmse_plot, cache=TRUE}
-rmse_plt
+#rmse_plt
 ```
 
 ```{r, save plots, cache=TRUE, include=FALSE}
-ggsave(here("vignettes","error_mean_plot.svg"),
-       plot=error_mean_plt,
-       height=4,
-       width=7.9,
-       units="in")
-
-ggsave(here("vignettes","rmse_plot.svg"),
-       plot=rmse_plt,
-       height=4,
-       width=7.9,
-       units="in")
+# ggsave(here("vignettes","error_mean_plot.svg"),
+#        plot=error_mean_plt,
+#        height=4,
+#        width=7.9,
+#        units="in")
+# 
+# ggsave(here("vignettes","rmse_plot.svg"),
+#        plot=rmse_plt,
+#        height=4,
+#        width=7.9,
+#        units="in")
 ```
 
 Here is how means were reported in the paper, and also how they were 
@@ -366,15 +401,15 @@ directions_plt <-  ggplot(
 
 
 ```{r, cache=TRUE, include=FALSE}
-ggsave(here("vignettes","directions_plot.svg"),
-       plot=directions_plt,
-       height=4,
-       width=7.9,
-       units="in")
+# ggsave(here("vignettes","directions_plot.svg"),
+#        plot=directions_plt,
+#        height=4,
+#        width=7.9,
+#        units="in")
 ```
 
 ```{r, cache=TRUE}
-directions_plt
+#directions_plt
 ```
 
 This is just another view of the previous plot, but interesting in that 

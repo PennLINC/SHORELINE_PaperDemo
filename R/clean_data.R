@@ -5,6 +5,7 @@ library(tibble)
 library(here)
 library(stringr)
 library(tidyr)
+library(reshape2)
 
 motion_df <- readRDS(here("inst", "extdata", "motion_benchmark.rds")) %>%
   tibble()
@@ -20,72 +21,62 @@ motion_df <- motion_df %>%
       )
     )
 
-# convert any rotation columns from rad to degree
-motion_df <- motion_df %>%
-  mutate(
-    across(
-      matches("rot_"), ~.x * 180/pi
-    )
-  )
-
-trans_rot_names <- names(motion_df) %>%
-  str_subset("^trans|^rot")
-
-calculate_error <- function(df, movement){
-  
-  # a quick tidyeval function
-  # that allows the colname to be
-  # passed in flexibly
-  #
-  # simply returns the `error_*movement*` column
-  
-  error <- sym(paste("error", movement, sep="_"))
-  actual <- sym(paste("true", movement, sep="_"))
-  movement_ <- sym(movement)
-  
-  mutate(df, !!error := !!actual - !!movement_) %>%
-    select(!!error) %>%
-    return()
-
+# Calculate the errors
+for (motion_axis in c("x", "y", "z")){
+  for (motion_type in c("trans", "rot")){
+    est.mov.name <- paste0(motion_type, "_", motion_axis)
+    est.mov <- motion_df[est.mov.name]
+    if (motion_type == "rot"){
+      est.mov <- est.mov * 180 / pi
+      motion_df[est.mov.name] <- est.mov
+    }
+    true.mov <- motion_df[paste0("true_", motion_type, "_", motion_axis)]
+    error.col <- paste("error", motion_type, motion_axis, sep="_")
+    motion_df[error.col] <- true.mov - est.mov
+  }
 }
-
-for(name in trans_rot_names) {
-
-  motion_df <- bind_cols(motion_df, calculate_error(motion_df, name))
-  
-}
-
-# write out the motion df, this will be used for table 1
-usethis::use_data(motion_df, overwrite = TRUE)
 
 # Get only the columns for the motion analysis
-moved <- motion_df %>%
-  select(
-    bval, contains("grad_"), iternum, scheme, method, setting, percent_motion,
-    contains("error_"), contains("true"), contains("trans"), contains("rot"),
-    volnum, denoising, matches("DWI")
-  )
-
-# pivot the df to make the rotations and translations one per row
-moved_long <- pivot_longer(moved, names_to = "variable", values_to = "value",
-                           cols = matches("trans|rot"))
-
-moved_long <- moved_long %>%
-  mutate(motion.type = case_when(str_detect(variable, "rot") ~ "Rotation",
-                                 TRUE                        ~ "Translation"),
-         axis = str_extract(variable, "[xyz]$"),
-         source = case_when(str_detect(variable, "true")  ~ "Truth",
-                            str_detect(variable, "error") ~ "Error",
-                            TRUE                          ~ NA_character_),
-         percent_motion = as.factor(percent_motion),
-         scheme = as.factor(scheme)
-         ) %>%
-  select(!c(matches("grad_|DWIBias|DWIDenoise")))
+motion_columns <- c(
+  "bval", "grad_x", "grad_y", "grad_z", "iternum", "scheme", "method", 
+  "setting", "percent_motion", "error_trans_x", "error_trans_y",
+  "error_trans_z", "error_rot_x", "error_rot_y", "error_rot_z",
+  "true_trans_x", "true_trans_y", "true_trans_z", "true_rot_x", 
+  "true_rot_y", "true_rot_z", "trans_x", "trans_y", "trans_z", "rot_x",
+  "rot_y", "rot_z", "volnum", "denoising")
 
 
-error_df_wsetting <- moved_long %>%
-  filter(source=="Error") %>%
-  select(!source)
+# write out the motion df, this will be used for table 1
+motion_df <- as_tibble(motion_df)
+usethis::use_data(motion_df, overwrite = TRUE)
+
+moved <- motion_df[, motion_columns] %>%
+  bind_cols(select(motion_df, matches("DWI")))
+
+
+m.moved <- melt(moved,
+                measure.vars = c(
+                  "error_trans_x", "error_trans_y", "error_trans_z", "error_rot_x", 
+                  "error_rot_y", "error_rot_z", "true_trans_x", "true_trans_y", 
+                  "true_trans_z", "true_rot_x", "true_rot_y", "true_rot_z", "trans_x",
+                  "trans_y", "trans_z", "rot_x", "rot_y", "rot_z"))
+
+m.moved$motion.type <- 'Translation'
+m.moved$motion.type[grepl('*rot_', m.moved$variable)] <- 'Rotation'
+table(m.moved$motion.type)
+m.moved$axis <- gsub(".*_([xyz])$", '\\1', m.moved$variable)
+m.moved$source <- "Estimated"
+m.moved$source[grep('true', m.moved$variable)] <- "Truth"
+m.moved$source[grep('error', m.moved$variable)] <- "Error"
+m.moved$percent_motion <- as.factor(m.moved$percent_motion)
+m.moved$scheme <- factor(m.moved$scheme,
+                         levels=c("ABCD", "HCP", "DSIQ5", "HASC55"))
+drop_cols <- c("DWIBiasCorrect_pre", "grad_x", "grad_y", "grad_z",
+               "DWIBiasCorrect_post", "DWIBiasCorrect_change", "DWIDenoise_pre",
+               "DWIDenoise_post", "DWIDenoise_change", "variable")
+error_df_wsetting <- subset(m.moved, (source=="Error"))  %>% 
+  select(-one_of(drop_cols))
+error_df_wsetting$source <- NULL
 
 # get the sd of the error
 error_rmse_wsetting <- error_df_wsetting %>%
@@ -96,7 +87,11 @@ error_rmse_wsetting <- error_df_wsetting %>%
             mean_error=mean(value),
             sd_error=sd(value))
 
+rm(motion_df, m.moved, moved, motion_columns, drop_cols, est.mov,
+   true.mov)
+
 # write out the error rmse df, this will be used for analyses
+error_rmse_wsetting <- as_tibble(error_rmse_wsetting)
 usethis::use_data(error_rmse_wsetting, overwrite = TRUE)
 
 #---------------------------------#
