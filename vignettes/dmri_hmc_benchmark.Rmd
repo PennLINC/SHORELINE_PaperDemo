@@ -30,7 +30,7 @@ library(gtsummary)
 library(gt)
 library(here)
 library(stringr)
-library(ggplot2)
+library(ggplot2); theme_set(theme_minimal())
 library(viridis)
 
 library(SHORELINEPaper) # for the data
@@ -275,19 +275,19 @@ setting_tests_gt %>%
       ),
     locations = cells_column_spanners(spanners = everything())
   ) %>%
-  opt_table_font("Times New Roman") %>%
   tab_header(md("**Predicting RMSE of Motion Estimates**"),
-             subtitle = "Evaluation of Effects on Transformation")
+             subtitle = "Evaluation of Effects on Transformation") %>%
+  opt_table_font("Times New Roman")
 ```
 
 
-We can see that all the effects that survive a filter for  are for SHORELine and the estimates are
+We can see that all the effects that survive a filter for $\text{Adjusted-}p < 0.01$ are for SHORELine and the estimates are
 positive. This means that Affine RMSE is greater than Rigid RMSE. Although these 
 estimates are all tiny, we will simplify subsequent comparisons by only choosing
 rigid. Rigid also has the benefit of much shorter run times than Affine. As 
 expected, there are no differences for Eddy.
 
-This section subsets the RMSE values to just those we're using for the 
+We'll subset the RMSE values to just those we're using for the 
 rest of the comparisons:
 
 ```{r compare_rmse}
@@ -301,8 +301,19 @@ error_rmse <- error_rmse_wsetting %>%
 ## 2. Summarization of Motion Detection Errors
 
 Here we summarize how big errors were in estimating head motion. We first look
-at the distribution of errors to check that it's centered around zero. This is 
-the case for both eddy and shoreline. 
+at the distribution of errors to check that it's centered around zero, and that this is 
+the case for both eddy and shoreline.
+
+```{r}
+error_df_wsetting %>%
+  select(method, scheme, denoising, percent_motion, motion.type, Error = value) %>%
+  filter(Error < 20 & Error > -20) %>%
+  mutate(percent_motion = ordered(percent_motion, levels=c(50, 30, 15))) %>%
+  ggplot(aes(x=Error, y=percent_motion, fill=scheme)) +
+  #geom_boxplot() +
+  ggdist::stat_slab(alpha = 0.5, width = 0, .width = 0, point_colour = NA, expand=TRUE, color = "black") +
+  facet_grid(~ motion.type)
+```
 
 Next we see what the standard deviation
 of the error is. This tells us, on average, the amount of degrees or mm we 

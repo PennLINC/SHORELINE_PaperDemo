@@ -77,6 +77,7 @@ drop_cols <- c("DWIBiasCorrect_pre", "grad_x", "grad_y", "grad_z",
 error_df_wsetting <- subset(m.moved, (source=="Error"))  %>% 
   select(-one_of(drop_cols))
 error_df_wsetting$source <- NULL
+usethis::use_data(error_df_wsetting, overwrite = TRUE)
 
 # get the sd of the error
 error_rmse_wsetting <- error_df_wsetting %>%
