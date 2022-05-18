@@ -8,6 +8,13 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+# Introduction
+
+In this project, we used FiberFox to simulate entire dMRI series for ABCD, HCP, DSIQ5, and HASC55
+data. Head motion was then introduced by applying rigid transforms to the streamline
+data (translations and rotations). Then, QSIPrep used both SHORELine and Eddy to
+estimate the introduced head motion — analysis of these results are evaluated in this notebook.
+
 # Libraries & Setup
 
 ```{r setup, include=FALSE}
@@ -17,11 +24,14 @@ library(tidyr)
 library(broom)
 library(ggpattern)
 library(emmeans)
+library(tibble)
+library(janitor)
 library(gtsummary)
 library(gt)
 library(here)
 library(stringr)
 library(ggplot2)
+library(viridis)
 
 library(SHORELINEPaper) # for the data
 ```
@@ -31,7 +41,10 @@ This package internally downloads and cleans them for
 your convenience. They're available preprocessed within the package:
 
 ```{r}
-data("motion_df") # for viewing the preprocessed data
+# for viewing the preprocessed data
+motion_df <- SHORELINEPaper::motion_df %>%
+  as_tibble()
+
 data("error_rmse_wsetting") # for analysis of estimated motion
 ```
 
@@ -40,41 +53,97 @@ data("error_rmse_wsetting") # for analysis of estimated motion
 The table below shows the number of `b0`'s for each scheme:
 
 ```{r}
-# TODO demonstrate the table in the paper
+# QUESTION the Num b > 1 seem to be slightly higher and lower than table 1
+motion_df %>%
+  filter(
+    iternum == 1 &
+      method == "SHORELine" &
+      denoising == "none" &
+      bval > 100 &
+      setting == "Affine") %>%
+  group_by(percent_motion, scheme) %>%
+  summarise(max_b = max(bval),
+            num_b = n()) %>%
+  ungroup() %>%
+  distinct(scheme, max_b, num_b) %>%
+  t() %>%
+  row_to_names(1) %>%
+  data.frame() %>%
+  add_row(ABCD = "Shelled", HCP = "Shelled", DSIQ5 = "Cartesian", HASC55 = "Random", .before = 1) -> tab1
 
-# motion_df %>%
-# filter(
-#   iternum == 1 &
-#     method == "SHORELine" &
-#     denoising == "none" &
-#     bval > 100 &
-#     setting == "Affine") %>%
-#    select(percent_motion, scheme) %>%
-#    table()
+rownames(tab1) <- c("Type", "Max. b", "Num. b > 0")
 
-# motion_df %>%
-#   mutate( Type = case_when(str_detect(scheme, "ABCD|HCP")  ~ "Shelled",
-#                      str_detect(scheme, "DSI")      ~ "Cartesian",
-#                      str_detect(scheme, "HASC")     ~ "Random"
-#                      )
-#     ) %>%
-#   filter(
-#   iternum == 1 &
-#     method == "SHORELine" &
-#     denoising == "none" &
-#     bval > 100 &
-#     setting == "Affine") %>%
-#   group_by(scheme, Type) %>%
-#   filter(bval > 0)# %>%
-  #summarise(bval_grth_0 = n(),
-  #          max_b = max(bval)) %>%
+gt(tab1, rownames_to_stub = TRUE) %>%
+  tab_header("Scheme properties and processing pipeline runs")
+
+```
+
+Below is a breakdown of how the runs were accumulated:
+
+```{r}
+motion_df %>%
+  filter(volnum == 0) %>%
+  select(Algorithm = method, Model = setting, Denoising = denoising, percent_motion, scheme) %>%
+  group_by_all() %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = scheme, values_from = n) %>%
+  ungroup() %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), 0, .))) %>%
+  mutate(Denoising = ifelse(Denoising == "none", "None", "MP-PCA")) %>%
+  mutate(percent_motion = paste0(as.character(percent_motion), " %")) %>%
+  # insert empty string for tidyness
+  mutate(across(where(is.factor), as.character)) %>%
+  group_by(Algorithm, Model, Denoising) %>%
+  mutate_at(vars(Algorithm:Denoising), ~ replace(.x, duplicated(.x), "")) %>%
+  ungroup() %>%
+  select(-Algorithm) %>%
+  gt() %>%
+  tab_spanner("# Pipeline Runs", columns = ABCD:HASC55) %>%
+  cols_align(align = "right", columns = percent_motion:HASC55) %>%
+  tab_row_group(
+    label = "Eddy",
+    rows = 1:12
+  ) %>%
+  tab_row_group(
+    label = "SHORELine",
+    rows = 13:24
+  )
   
-  #View()
+```
+
+And finally the total scans and volumes:
+
+```{r}
+motion_df %>%
+  filter(volnum == 0) %>%
+  select(Algorithm = method, Model = setting, Denoising = denoising, percent_motion, scheme) %>%
+  group_by_all() %>%
+  summarise(n = n()) %>%
+  pivot_wider(names_from = scheme, values_from = n) %>%
+  ungroup() %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), 0, .))) %>%
+  mutate(Denoising = ifelse(Denoising == "none", "None", "MP-PCA")) %>%
+  mutate(percent_motion = paste0(as.character(percent_motion), " %")) %>%
+  group_by(Algorithm) %>%
+  summarise(across(ABCD:HASC55,sum)) %>%
+  gt() %>%
+  tab_header("Total Scans")
 ```
 
 
+```{r}
+motion_df %>%
+  filter(bval > 0) %>%
+  select(Algorithm = method, Model = setting, Denoising = denoising, percent_motion, scheme) %>%
+  group_by(scheme) %>%
+  summarise(`Total b > 0 Volumes` = n()) %>%
+  t() %>%
+  row_to_names(1) %>%
+  data.frame() %>%
+  gt(rownames_to_stub = TRUE)
+```
 
-Errors for rotation are converted from radians to degrees, and
+Note that errors for rotation are converted from radians to degrees, and
 we also extract only the $b > 0$ volumes. Both Eddy and SHORELine use different
 methods (non-GP and non-SHORE) for motion-correcting these images.
 
@@ -84,14 +153,13 @@ methods (non-GP and non-SHORE) for motion-correcting these images.
 
 We tested Rigid and Affine transformation models for SHORELine and Linear and 
 Quadratic models in Eddy. In Eddy, the models only affect Eddy current correction
-we shouldn't see a difference in head motion estimates. SHORELine may or may 
+so we shouldn't see a difference in head motion estimates. SHORELine may or may 
 not benefit from having more degrees of freedom in the transformation model. 
 
 Here we test whether there are significant effects of transformation model.
 Under the hood R will pair the same scans and perform a paired t-test by 
 subtracting alphabetically. For SHORELine this means Affine - Rigid and 
 for Eddy it means Linear - Quadratic. 
-
 
 ```{r check_setting}
 setting_tests <- error_rmse_wsetting %>%
@@ -101,71 +169,119 @@ setting_tests <- error_rmse_wsetting %>%
   unnest(test)
 
 # Adjust the p-values and order them by the largest absolute effects
-setting_tests %>%
-  mutate(p_val_adjusted = p.adjust(p.value)) %>%
-  filter(p_val_adjusted < 0.01) %>%
-  arrange(motion.type, scheme, percent_motion, denoising, -abs(estimate)) %>%
-  select(motion.type, scheme, percent_motion, denoising, everything(), -hmc_method) %>%
-  filter(motion.type == "Rotation") -> setting_tests_rotation
-
-setting_tests %>%
-  mutate(p_val_adjusted = p.adjust(p.value)) %>%
-  filter(p_val_adjusted < 0.01) %>%
-  arrange(motion.type, scheme, percent_motion, denoising, -abs(estimate)) %>%
-  select(motion.type, scheme, percent_motion, denoising, everything(), -hmc_method) %>%
-  filter(motion.type != "Rotation") -> setting_tests_translation
-
-setting_tests_rotation %>%
-  select(scheme, everything(), -motion.type) %>%      # reorder columns
-  mutate(across(where(is.factor), as.character)) %>%  # convert to char for empty strings
+setting_tests_adj <- setting_tests %>% 
+  select(!c(parameter, method, alternative)) %>%
   
+  pivot_wider(
+    names_from = motion.type, 
+    values_from = c(estimate:conf.high)
+    ) %>%
+  
+  # p adjust any pvalues
+  mutate(
+    across(
+      contains("p.value"),
+       ~p.adjust(.x),
+      .names = "Adjusted_{.col}"
+      )
+    ) %>%
+
+  # filter sig pvals
+  # no eddy rows should get through this filter
+  filter(if_any(contains("Adjusted"), ~.x < 0.01))
+
+setting_tests_adj %>%
+  select(Method = hmc_method, Scheme = scheme, Denoising = denoising, percent_motion, everything()) %>%      
+  # reorder columns
+  arrange(Method, Scheme, Denoising) %>%
+  
+  # convert to char for empty strings &
   # insert empty strings for every group where the values are duplicated
-  group_by(scheme, percent_motion) %>%
-  mutate_at(vars(scheme:percent_motion), ~ replace(.x, duplicated(.x), "")) %>%
+  # for clarity
+  
+  mutate(across(where(is.factor), as.character)) %>%  
+  group_by(Method, Scheme, Denoising) %>%
+  mutate_at(vars(Method:Denoising), ~ replace(.x, duplicated(.x), "")) %>%
   ungroup() %>%
-  select(scheme:statistic, contains("conf"), p_val_adjusted) %>%
   
-  # precision for the confidence intervals
-  mutate(across(estimate:conf.high, ~ round(.x, 3))) %>%
+  # precision for the confidence intervals that get merged
+  mutate(across(contains("conf"), ~ round(.x, 2))) %>%
+  select(!matches("^p.value")) %>%
+  
+  # last details
+  mutate(Denoising = ifelse(Denoising == "none", "None", "DWIDenoise")) %>%
   
   
-  gt() %>%
+  gt(rowname_col = "Scheme") -> setting_tests_gt
+  
+setting_tests_gt %>%
+  tab_spanner(label = md("*Rotation*"), columns = matches("Rotation")) %>%
+  tab_spanner(label = md("*Translation*"), columns = matches("Translation")) %>%
   
   # string format confidence intervals
-  cols_merge(columns = c(conf.low, conf.high), pattern = "{1}, {2}") %>%
+  cols_merge(columns = c(conf.low_Translation, conf.high_Translation), pattern = "[{1}, {2}]") %>%
   cols_label(
-    conf.low = "95% CI"
-  ) -> setting_tests_rotation_gt
-
-setting_tests_translation %>%
-  select(scheme, everything(), -motion.type) %>%      # reorder columns
-  mutate(across(where(is.factor), as.character)) %>%  # convert to char for empty strings
-  
-  # insert empty strings for every group where the values are duplicated
-  group_by(scheme, percent_motion) %>%
-  mutate_at(vars(scheme:percent_motion), ~ replace(.x, duplicated(.x), "")) %>%
-  ungroup() %>%
-  select(scheme:statistic, contains("conf"), p_val_adjusted) %>%
-  
-  # precision for the confidence intervals
-  mutate(across(estimate:conf.high, ~ round(.x, 3))) %>%
-  
-  
-  gt() %>%
-  
-  # string format confidence intervals
-  cols_merge(columns = c(conf.low, conf.high), pattern = "{1}, {2}") %>%
+    conf.low_Translation = "95% CI"
+  ) %>%
+  cols_merge(columns = c(conf.low_Rotation, conf.high_Rotation), pattern = "[{1}, {2}]") %>%
   cols_label(
-    conf.low = "95% CI"
-  ) -> setting_tests_translation_gt
-
+    conf.low_Rotation = "95% CI"
+  ) %>%
+  fmt(
+    columns = matches("p.value"),
+    fns = function(x){
+      format.pval(x, eps=0.0001, digits = 3)
+    }
+  ) %>%
+  fmt_number(
+    columns = matches("statistic|estimate"),
+    decimals = 3
+  ) %>%
+  cols_label(
+    Adjusted_p.value_Rotation = md("Adj. *p*-value"),
+    Adjusted_p.value_Translation = md("Adj. *p*-value"),
+    estimate_Rotation = md("Estimate"),
+    estimate_Translation = md("Estimate"),
+    statistic_Rotation = md("Statistic"),
+    statistic_Translation = md("Statistic"),
+    percent_motion = md("% Motion")
+  ) %>%
+  
+  data_color(
+    columns = c(estimate_Translation, estimate_Rotation),
+    colors = scales::col_numeric(
+      palette = rocket(10),
+      domain = c(-0.1, 0.5)
+    )
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(font = "Times New Roman")
+      ),
+    locations = cells_body(
+      columns = everything(),
+      rows = everything()
+    )
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_column_spanners(spanners = everything())
+  ) %>%
+  opt_table_font("Times New Roman") %>%
+  tab_header(md("**Predicting RMSE of Motion Estimates**"),
+             subtitle = "Evaluation of Effects on Transformation")
 ```
 
-```{r}
-#tbl_merge(list(setting_tests_translation_gt, setting_tests_rotation_gt), tab_spanner = c("Translation", "Rotation"))
-```
 
-We can see that all the effects are for SHORELine and the estimates are
+We can see that all the effects that survive a filter for  are for SHORELine and the estimates are
 positive. This means that Affine RMSE is greater than Rigid RMSE. Although these 
 estimates are all tiny, we will simplify subsequent comparisons by only choosing
 rigid. Rigid also has the benefit of much shorter run times than Affine. As 

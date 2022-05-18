@@ -18,13 +18,16 @@ Imports:
     gt,
     gtsummary,
     here,
+    janitor,
     lubridate,
     magrittr,
     reshape2,
+    scales,
     stringr,
     svglite,
     tidyr,
-    usethis
+    usethis,
+    viridis
 Depends: 
     R (>= 2.10)
 LazyData: true
