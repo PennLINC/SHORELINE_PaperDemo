@@ -30,6 +30,7 @@ library(gtsummary)
 library(gt)
 library(here)
 library(stringr)
+library(ggdist)
 library(ggplot2); theme_set(theme_minimal())
 library(viridis)
 
@@ -307,12 +308,12 @@ the case for both eddy and shoreline.
 ```{r}
 error_df_wsetting %>%
   select(method, scheme, denoising, percent_motion, motion.type, Error = value) %>%
-  filter(Error < 20 & Error > -20) %>%
+  filter(Error < 20 & Error > -20) %>% # very egregious errors
   mutate(percent_motion = ordered(percent_motion, levels=c(50, 30, 15))) %>%
   ggplot(aes(x=Error, y=percent_motion, fill=scheme)) +
-  #geom_boxplot() +
-  ggdist::stat_slab(alpha = 0.5, width = 0, .width = 0, point_colour = NA, expand=TRUE, color = "black") +
-  facet_grid(~ motion.type)
+  stat_slab(alpha = 0.5, width = 0, .width = 0, point_colour = NA, expand=TRUE, color = "black") +
+  facet_grid(method ~ motion.type, scales = "free") +
+  ggtitle("Distribution of Motion Estimate Errors")
 ```
 
 Next we see what the standard deviation
@@ -379,7 +380,7 @@ error_mean_plt <-  ggplot(
 ```
 
 ```{r, error_mean_plot, cache=TRUE}
-#error_mean_plt
+error_mean_plt
 
 ```
 

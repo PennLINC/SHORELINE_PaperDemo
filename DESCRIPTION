@@ -13,6 +13,7 @@ Imports:
     broom,
     dplyr,
     emmeans,
+    ggdist,
     ggpattern,
     ggplot2,
     gt,
