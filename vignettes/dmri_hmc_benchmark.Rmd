@@ -18,6 +18,8 @@ estimate the introduced head motion — analysis of these results are evaluated 
 # Libraries & Setup
 
 ```{r setup, include=FALSE}
+# TODO chunk names
+
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.width=16, fig.height=12) 
 library(dplyr)
@@ -46,7 +48,7 @@ your convenience. They're available preprocessed within the package:
 # for viewing the preprocessed data
 motion_df <- SHORELINEPaper::motion_df %>%
   as_tibble()
-
+data("error_df_wsetting")
 data("error_rmse_wsetting") # for analysis of estimated motion
 ```
 
@@ -164,6 +166,10 @@ subtracting alphabetically. For SHORELine this means Affine - Rigid and
 for Eddy it means Linear - Quadratic. 
 
 ```{r check_setting}
+# TODO put these long functions into a function
+
+# TODO times new roman in the header and stub
+
 setting_tests <- error_rmse_wsetting %>%
   rename(hmc_method=method) %>%
   group_by(denoising, scheme, motion.type, hmc_method, percent_motion) %>%
@@ -307,6 +313,8 @@ at the distribution of errors to check that it's centered around zero, and that 
 the case for both eddy and shoreline.
 
 ```{r}
+# TODO generally improve this plot
+
 error_df_wsetting %>%
   select(method, scheme, denoising, percent_motion, motion.type, Error = value) %>%
   filter(Error < 20 & Error > -20) %>% # very egregious errors
@@ -322,6 +330,8 @@ of the error is. This tells us, on average, the amount of degrees or mm we
 can expect an error to be for each method.
 
 ```{r plot_rmse_data_means, cache=TRUE}
+# TODO put formatting into a function
+
 rmse_summaries <- error_rmse %>%
   group_by(denoising, scheme, motion.type, method, percent_motion) %>%
   summarise(mean_rmse=mean(rmse), 
@@ -370,7 +380,7 @@ error_mean_plt <-  ggplot(
     ) +
   theme_bw(
     base_family="Times",
-    base_size=12
+    base_size=16
   ) +
   labs(title = "Head Motion Estimate Error", 
        y = "Mean Error (±Mean RMSE)", 
@@ -381,6 +391,7 @@ error_mean_plt <-  ggplot(
 ```
 
 ```{r, error_mean_plot, cache=TRUE}
+# TODO reduce plot size, increase font size
 error_mean_plt
 ```
 
@@ -412,7 +423,7 @@ rmse_plt <-  ggplot(
     ) +
   theme_bw(
     base_family="Times",
-    base_size=12
+    base_size=16
   ) +
   labs(title = "Motion Estimate RMSE",
        y = "Mean RMSE (±SD)", 
@@ -445,11 +456,14 @@ Here is how means were reported in the paper, and also how they were
 calculated for the OHBM poster.
 
 ```{r get_means}
+# TODO formatting
 errs <- error_rmse %>% group_by(motion.type) %>% 
   summarise(mean_mean_error=mean(mean_error),
             sd_mean_error=sd(mean_error))
-tbl_summary(error_rmse, by = motion.type, statistic = list(all_continuous() ~ "{mean} ({sd})"), include = )
 
+errs %>%
+  gt() %>%
+  tab_header("Mean RMSE by Motion Type")
 ```
 
 ## 3. Compare Performance on Sampling Schemes
@@ -472,31 +486,60 @@ rmse_summaries_collapsed <- error_rmse %>%
   select(-denoised) %>%
   filter(method_name != "SHORELine + MP-PCA") # no difference, so skip it
 
-rmse_summaries_collapsed$num_directions <- recode(
-  rmse_summaries_collapsed$scheme,
-  ABCD=103,
-  HCP=270,
-  DSIQ5=257,
-  HASC55=55)
+rmse_summaries_collapsed %>%
+  ungroup() %>%
+  mutate(
+    num_directions = case_when(
+      scheme == "ABCD"    ~ 103,
+      scheme == "HCP"     ~ 270,
+      scheme == "DSIQ5"   ~ 257,
+      scheme == "HASC55"  ~ 55
+    )
+  ) %>%
+# rmse_summaries_collapsed$num_directions <- recode(
+#   rmse_summaries_collapsed$scheme,
+#   ABCD=103,
+#   HCP=270,
+#   DSIQ5=257,
+#   HASC55=55)
 
-rmse_summaries_collapsed$denoiser <- recode(
-  rmse_summaries_collapsed$denoising,
-  none="None",
-  dwidenoise="MP-PCA"
-)
+  mutate(
+    denoiser = case_when(
+      denoising == "none" ~ "None",
+      TRUE                ~ "MP-PCA"
+    )
+  ) %>%
+# rmse_summaries_collapsed$denoiser <- recode(
+#   rmse_summaries_collapsed$denoising,
+#   none="None",
+#   dwidenoise="MP-PCA"
+# )
 
-rmse_summaries_collapsed$scheme_type = recode(
-  rmse_summaries_collapsed$scheme,
-  ABCD="Shelled",
-  HCP="Shelled",
-  DSIQ5="Non-Shelled",
-  HASC55="Non-Shelled")
+  mutate(
+    scheme_type = case_when(
+      str_detect(scheme, "ABCD|HCP")  ~ "Shelled",
+      TRUE                            ~ "Non-Shelled"
+    )
+  ) %>%
+  
+# rmse_summaries_collapsed$scheme_type = recode(
+#   rmse_summaries_collapsed$scheme,
+#   ABCD="Shelled",
+#   HCP="Shelled",
+#   DSIQ5="Non-Shelled",
+#   HASC55="Non-Shelled")
 
-rmse_summaries_collapsed$motion.type <- recode(
-  rmse_summaries_collapsed$motion.type,
-  Rotation="Rotation (degrees)",
-  Translation="Translation (mm)"
-  )
+  mutate(
+    motion.type = case_when(
+      str_detect(motion.type, "Rotation")     ~ "Rotation (degrees)",
+      str_detect(motion.type, "Translation")  ~ "Tranlation (mm)",
+    )
+  ) -> rmse_summaries_collapsed
+# rmse_summaries_collapsed$motion.type <- recode(
+#   rmse_summaries_collapsed$motion.type,
+#   Rotation="Rotation (degrees)",
+#   Translation="Translation (mm)"
+#   )
 
 # Summarize the motion rmse in the different cells
 pd2 = position_dodge(8)
@@ -531,22 +574,22 @@ directions_plt <-  ggplot(
 
 
 ```{r, cache=TRUE, include=FALSE}
-# ggsave(here("vignettes","directions_plot.svg"),
-#        plot=directions_plt,
-#        height=4,
-#        width=7.9,
-#        units="in")
+ggsave(here("vignettes","directions_plot.svg"),
+       plot=directions_plt,
+       height=4,
+       width=7.9,
+       units="in")
 ```
 
 ```{r, cache=TRUE}
-#directions_plt
+directions_plt
 ```
 
 This is just another view of the previous plot, but interesting in that 
 it clearly shows that SHORELine's performance on the 55-direction CS-DSI
 scan is in the range of the performance on the ABCD multi shell scheme, which
 has almost twice as many directions.
-Better statistically test this to be sure:
+We can statistically test this, to be sure:
 
 ```{r test_ndirs}
 error_rmse_dirs <- error_rmse
@@ -570,6 +613,7 @@ error_rmse_dirs$percent_motion <- with(
   error_rmse_dirs,
   as.numeric(levels(percent_motion))[percent_motion])
 
+# run lm
 rotation_shell_model <- lm(
   rmse ~ scheme_type * num_directions + denoising + percent_motion,
   data=subset(error_rmse_dirs, motion.type=="Rotation"))
@@ -581,6 +625,7 @@ translation_shell_model <- lm(
 ```
 
 ```{r}
+# create gt tables
 translation_rmse_tab <- tbl_regression(
   translation_shell_model, 
   intercept=TRUE,
@@ -603,11 +648,13 @@ rotation_rmse_tab <- tbl_regression(
 
 
 ```{r}
+# merge and display
+
 tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Translation", "Rotation")) %>%
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
-  tab_header(title = "RMSE of Predicted Motion",
-             subtitle = "Main Effects of Denoising, Number of Volumes, and Percent Motion, including interactions with Shell Scheme") %>%
+  tab_header(title = "Models Predicting RMSE of Predicted Motion",
+             subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme") %>%
   tab_source_note(md("*This data is simulated*"))
 ```
 
@@ -665,9 +712,12 @@ rotation_rmse_paired_tab <- tbl_regression(
 tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spanner = c("Translation", "Rotation")) %>%
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
-  tab_header(title = "RMSE of Predicted Motion Using Paired Eddy & SHORELine Estimates",
+  tab_header(title = "Predicting RMSE Difference (Eddy — SHORELine) in ABCD & HCP Schemes",
              subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme") %>%
-  tab_source_note(md("*This data is simulated*"))
+  tab_source_note(md("*This data is simulated*")) %>%
+  tab_footnote(escape_latex(md("The SHORELine RMSE value was subtracted from the Eddy RMSE from each simulated scan, and this difference was the outcome variable of the model. Positive Beta estimates suggest better performance by SHORELine.")),
+               locations = cells_title("title")) %>%
+  opt_table_font("Times New Roman")
 ```
 
 Plot the RMSE differences
