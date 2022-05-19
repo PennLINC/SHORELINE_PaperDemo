@@ -21,7 +21,7 @@ estimate the introduced head motion — analysis of these results are evaluated 
 # TODO chunk names
 
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(fig.width=16, fig.height=12) 
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
 library(dplyr)
 library(tidyr)
 library(broom)
@@ -78,7 +78,8 @@ motion_df %>%
 rownames(tab1) <- c("Type", "Max. b", "Num. b > 0")
 
 gt(tab1, rownames_to_stub = TRUE) %>%
-  tab_header("Scheme properties and processing pipeline runs")
+  tab_header("Scheme properties and processing pipeline runs") %>%
+  opt_table_font("Times New Roman")
 
 ```
 
@@ -111,7 +112,8 @@ motion_df %>%
   tab_row_group(
     label = "SHORELine",
     rows = 13:24
-  )
+  ) %>%
+  opt_table_font("Times New Roman")
   
 ```
 
@@ -131,7 +133,8 @@ motion_df %>%
   group_by(Algorithm) %>%
   summarise(across(ABCD:HASC55,sum)) %>%
   gt() %>%
-  tab_header("Total Scans")
+  tab_header("Total Scans") %>%
+  opt_table_font("Times New Roman")
 ```
 
 
@@ -144,7 +147,8 @@ motion_df %>%
   t() %>%
   row_to_names(1) %>%
   data.frame() %>%
-  gt(rownames_to_stub = TRUE)
+  gt(rownames_to_stub = TRUE) %>%
+  opt_table_font("Times New Roman")
 ```
 
 Note that errors for rotation are converted from radians to degrees, and
@@ -463,7 +467,8 @@ errs <- error_rmse %>% group_by(motion.type) %>%
 
 errs %>%
   gt() %>%
-  tab_header("Mean RMSE by Motion Type")
+  tab_header("Mean RMSE by Motion Type") %>%
+  opt_table_font("Times New Roman")
 ```
 
 ## 3. Compare Performance on Sampling Schemes
@@ -655,7 +660,8 @@ tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Transl
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Models Predicting RMSE of Predicted Motion",
              subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme") %>%
-  tab_source_note(md("*This data is simulated*"))
+  tab_source_note(md("*This data is simulated*")) %>%
+  opt_table_font("Times New Roman")
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -720,8 +726,10 @@ tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spann
   opt_table_font("Times New Roman")
 ```
 
-Plot the RMSE differences
-```{r rmse_diffs_boxplot}
+We plot the RMSE differences:
+
+```{r rmse_diffs_boxplot, include=FALSE}
+#TODO should we use this plot or the one below?
 paired_error$percent_motion <- factor(paired_error$percent_motion)
 
 ggplot(paired_error, 
@@ -744,6 +752,42 @@ ggplot(paired_error,
     fill="Denoising\nMethod")
 
 ```
+
+```{r}
+ggplot(paired_error, 
+       aes(x=as.factor(percent_motion), 
+           y=shore_difference,
+           fill=denoising)) +
+  stat_halfeye(
+    justification = -.2,
+    alpha = 0.8,
+    .width = 0, 
+    point_colour = NA) +
+  geom_boxplot(
+    width = .12, 
+    outlier.shape = NA ## `outlier.shape = NA` works as well
+  ) +
+  # geom_point(
+  #   ## draw horizontal lines instead of points
+  #   shape = 95,
+  #   size = 10,
+  #   alpha = 0.2,
+  # ) +
+  coord_cartesian(xlim = c(1.2, NA)) +
+  facet_grid(motion.type~scheme, scales="free") +
+  scale_fill_manual(
+    labels=c("MP-PCA", "None"),
+    values=c("dwidenoise"="#FFC20A", "none"="#0C7BDC")) +
+  theme_bw(
+    base_family="Helvetica",
+    base_size=12) +
+  labs(
+    title = "Differences in Estimate Error (Eddy - SHORELine)",
+    y = "Estimation Error Difference",
+    x = "Percent Motion Volumes",
+    fill="Denoising\nMethod")
+```
+
 
 # QC metric comparisons between SHORELine and Eddy
 
