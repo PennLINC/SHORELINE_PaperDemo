@@ -824,10 +824,72 @@ setting_tests <- setting_tests %>%
 # 
 # significant.effects <- subset(setting_tests, (p.value.adj < 0.01))
 # significant.effects[order(-abs(significant.effects$estimate)),]
+
+setting_tests_gt <- setting_tests %>% 
+  select(!c(parameter, method, alternative)) %>%
+  select(Method = hmc_method, Scheme = scheme, Denoising = denoising, percent_motion, everything()) %>%
+  arrange(Method, Scheme, Denoising) %>%
+  
+  # convert to char for empty strings &
+  # insert empty strings for every group where the values are duplicated
+  # for clarity
+  
+  mutate(across(where(is.factor), as.character)) %>%  
+  group_by(Method, Scheme, Denoising) %>%
+  mutate_at(vars(Method:Denoising), ~ replace(.x, duplicated(.x), "")) %>%
+  ungroup() %>%
+  
+  # precision for the confidence intervals that get merged
+  mutate(across(contains("conf"), ~ round(.x, 2))) %>%
+  
+  # last details
+  mutate(Denoising = ifelse(Denoising == "none", "None", "DWIDenoise")) %>%
+  select(-p.value) %>%
+  mutate(pval_marker = p.value.adj) %>%
+  mutate(percent_motion = paste0(as.character(percent_motion), " %")) %>%
+  
+  gt(rowname_col = "Scheme")
+```
+
+```{r}
+setting_tests_gt %>%
+  cols_merge(columns = c(conf.low, conf.high), pattern = "[{1}, {2}]") %>%
+  cols_label(
+    conf.low = "95% CI"
+  ) %>%
+  fmt(
+    columns = matches("p.value.adj"),
+    fns = function(x){
+      format.pval(x, eps=0.0001, digits = 3)
+    }
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_body(columns = p.value.adj, rows = pval_marker < 0.01)
+  ) %>%
+  fmt_number(
+    columns = matches("statistic|estimate"),
+    decimals = 3
+  ) %>%
+  cols_label(
+    p.value.adj = md("Adj. *p*-value"),
+    estimate = md("Estimate"),
+    statistic = md("Statistic"),
+    percent_motion = md("% Motion")
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(weight = "bold")
+      ),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  opt_table_font("Times New Roman")
 ```
 
 Recall here we're testing NDC, which is better when higher. The t-tests work 
-the same way here as they did above: all the effects are for SHORELine and the 
+the same way here as they did above: all the significant effects are for SHORELine and the 
 estimates are positive. This means that Affine NDC is higher than Rigid NDC. 
 Although these effects are absolutely tiny, they have a different direction
 than the RMSE tests: Affine produces higher QC metrics than Rigid, while Rigid
@@ -838,29 +900,43 @@ Rigid is also remarkably faster than Affine, and could be the first step
 of a more powerful Eddy Current correction later.
 
 ```{r qc_select_setting}
-qc_df <- subset(qc_df, setting %in% c("Rigid", "Quadratic"))
-qc_df$setting <- NULL
+qc_df <- qc_df %>% 
+  filter(setting %in% c("Rigid", "Quadratic")) %>%
+  select(-setting)
 
 ```
 
-## How does the fwhm compare?
+## 2. How does the fwhm compare?
 
 ```{r fwhm_plot}
-fwhm_smooth_plot <- ggplot(qc_df, aes(x=factor(percent_motion), y=fwhm, fill=method)) + 
-  geom_hline(yintercept = 0) +
-  geom_violin(draw_quantiles = 0.5) + 
+fwhm_smooth_plot <- qc_df %>%
+  ggplot(aes(x=factor(percent_motion), y=fwhm, fill=method)) +
+  stat_halfeye(
+    justification = -.2,
+    alpha = 0.8,
+    .width = 0, 
+    point_colour = NA) +
+  geom_boxplot(
+    position = position_dodge2(width = 5, preserve = "single", padding= 0.02),
+    width = .12,
+    alpha = 0.8,
+    outlier.shape = NA ## `outlier.shape = NA` works as well
+  ) +
+
   scale_fill_manual(
     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")) +
   theme_bw(
-    base_family="Helvetica",
+    base_family="Times",
     base_size=12
   ) +
   labs(title = "Spatial Smoothness (FWHM)", 
        y = "FWHM (mm)", 
        x = "Percent Motion Volumes", 
        fill = "Method") +
-  facet_grid(.~scheme) + ylim(3.5,4.5)
+  facet_wrap(~scheme, ncol=2)
+```
 
+```{r}
 fwhm_smooth_plot
 ```
 
@@ -900,12 +976,13 @@ tbl_regression(
   as_gt() %>%
   tab_header(title = "Linear Model Predicting FWHM (Eddy — Shoreline) of Each Scan",
              subtitle = "Main Effects of Percent Motion, Scheme, and Denoising") %>%
-  tab_source_note(md("*This data is simulated*"))
+  tab_source_note(md("*This data is simulated*")) %>%
+  
   
 ```
 
 
-## Comparing FWHM-corrected NDC between SHORELine and Eddy
+## 3. Comparing FWHM-corrected NDC between SHORELine and Eddy
 
 Does one of the methods have higher NDC scores? Also what is the improvement in
 NDC relative to the raw data? We know that higher percent motion will cause 
