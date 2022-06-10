@@ -720,7 +720,7 @@ rmse_model_table
 
 ```{r}
 # save
-rmse_model_table %>% gtsave("rmse_model.pdf", zoom=1)
+rmse_model_table %>% gtsave(here("figures", "rmse_model.pdf"), zoom=1)
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -806,7 +806,7 @@ rmse_difference_table
 ```
 
 ```{r}
-rmse_difference_table %>% gtsave("rmse_diff_model.pdf", zoom=1)
+rmse_difference_table %>% gtsave(here("figures", "rmse_diff_model.pdf"), zoom=1)
 ```
 
 
@@ -1080,8 +1080,16 @@ tbl_regression(
     ),
     locations = cells_source_notes()
   ) %>% 
-  opt_table_font("Times New Roman")
-  
+  opt_table_font("Times New Roman") -> fwhm_model
+
+```
+
+```{r}
+fwhm_model
+```
+
+```{r}
+fwhm_model %>% gtsave(here("figures", "fwhm_model.pdf"), zoom=1)
 ```
 
 
