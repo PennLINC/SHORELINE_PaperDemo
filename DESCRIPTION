@@ -4,7 +4,7 @@ Version: 0.0.0.9000
 Authors@R: c(
     person("Matthew", "Ceislak", , "matthew.cieslak@pennmedicine.upenn.edu", role = c("aut", "cre"),
            comment = c(ORCID = "YOUR-ORCID-ID")),
-    person("Tinashe", "Tapera", , "tinashe.tapera@pennmedicine.upenn.edu", role = c("cre"),
+    person("Tinashe", "Tapera", , "tinashe.tapera@pennmedicine.upenn.edu", role = "ctb",
            comment = c(ORCID = "0000-0001-9080-5010"))
     )
 Description: This package was developed to reproduce, document, and share the results of the SHORELINE benchmarking paper developed by Matt Cieslak for the Penn Lifespan Informatics & Neuroimaging Center.
