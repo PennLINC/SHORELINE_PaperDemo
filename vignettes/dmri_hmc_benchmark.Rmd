@@ -361,13 +361,12 @@ error_mean_plt <-  ggplot(
     rmse_summaries,
     aes(
       y=group_mean_error, x=percent_motion, 
-      color=method, fill=method)
+      fill=method, group=Denoising)
     ) +
-  geom_bar(aes(linetype=Denoising), stat="identity", position=pd, width = 0.6) +
+  geom_bar(aes(alpha=Denoising), stat="identity", position=pd, width = 0.6) +
   geom_errorbar(
     aes(ymax=group_mean_error+mean_rmse,
         ymin=group_mean_error-mean_rmse,
-        linetype=Denoising,
         width=0.7),
     color = "black", position=pd
     ) +
@@ -378,13 +377,13 @@ error_mean_plt <-  ggplot(
   scale_fill_manual(
     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")
     ) +
-  scale_linetype_manual(
+  scale_alpha_manual(
     name="Denoising Strategy",
-    values=linetypes
+    values=c(1.0, 0.5)
     ) +
   theme_bw(
-    base_family="Times",
-    base_size=16
+    base_family="Helvetica",
+    base_size=12
   ) +
   labs(title = "Head Motion Estimate Error", 
        y = "Mean Error (±Mean RMSE)", 
@@ -401,33 +400,64 @@ error_mean_plt
 
 ```{r}
 # Summarize the motion rmse in the different cells
+# rmse_plt <-  ggplot(
+#     rmse_summaries,
+#     aes(
+#       y=mean_rmse, x=percent_motion, 
+#       color=method, fill=method)
+#     ) +
+#   geom_bar(aes(alpha=Denoising), stat="identity", position=pd, width = 0.6) +
+#   geom_errorbar(
+#     aes(ymax=mean_rmse+sd_rmse, ymin=mean_rmse-sd_rmse,
+#         width=0.6),
+#     color = "black", position=pd
+#     ) +
+#   facet_grid(motion.type~scheme, scales="free") + 
+#   scale_color_manual(
+#     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77"), guide="none"
+#     ) +
+#   scale_fill_manual(
+#     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")
+#     ) +
+#   scale_alpha_manual(
+#     name="Denoising Strategy",
+#     values=c(1.0, 0.5)
+#     ) +
+#   theme_bw(
+#     base_family="Helvetica",
+#     base_size=12
+#   ) +
+#   labs(title = "Motion Estimate RMSE",
+#        y = "Mean RMSE (±SD)", 
+#        x = "Percent Motion Volumes", 
+#        fill = "Method",
+#        ) +
+#   guides(linetype=guide_legend(override.aes=list(fill=NA)))
+
+
 rmse_plt <-  ggplot(
     rmse_summaries,
     aes(
       y=mean_rmse, x=percent_motion, 
-      color=method, fill=method)
+      fill=method, group=Denoising)
     ) +
-  geom_bar(aes(linetype=Denoising), stat="identity", position=pd, width = 0.6) +
+  geom_bar(aes(alpha=Denoising), stat="identity", position=pd, width = 0.6) +
   geom_errorbar(
     aes(ymax=mean_rmse+sd_rmse, ymin=mean_rmse-sd_rmse,
-        linetype=Denoising,
-        width=0.7),
+        width=0.6),
     color = "black", position=pd
     ) +
   facet_grid(motion.type~scheme, scales="free") + 
-  scale_color_manual(
-    values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77"), guide="none"
-    ) +
   scale_fill_manual(
     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")
     ) +
-  scale_linetype_manual(
+  scale_alpha_manual(
     name="Denoising Strategy",
-    values=linetypes
+    values=c(1.0, 0.5)
     ) +
   theme_bw(
-    base_family="Times",
-    base_size=16
+    base_family="Helvetica",
+    base_size=12
   ) +
   labs(title = "Motion Estimate RMSE",
        y = "Mean RMSE (±SD)", 
@@ -435,7 +465,6 @@ rmse_plt <-  ggplot(
        fill = "Method",
        ) +
   guides(linetype=guide_legend(override.aes=list(fill=NA)))
-
 ```
 
 ```{r, rmse_plot, cache=TRUE}
@@ -655,13 +684,14 @@ rotation_rmse_tab <- tbl_regression(
 ```{r}
 # merge and display
 
-tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Translation", "Rotation")) %>%
+rmse_model_table <- tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Translation", "Rotation")) %>%
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
-  tab_header(title = "Models Predicting RMSE of Predicted Motion",
+  tab_header(title = "RMSE of Predicted Motion",
              subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme") %>%
-  tab_source_note(md("*This data is simulated*")) %>%
-  opt_table_font("Times New Roman")
+  #tab_source_note(md("*This data is simulated*")) %>%
+  opt_table_font("Helvetica")
+rmse_model_table %>% gtsave("rmse_model.pdf", zoom=1)
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -998,7 +1028,7 @@ improved_ndc_summaries <- qc_df %>%
             se_ndc=sd_ndc/sqrt(length(improved.ndc.corrected)),
             group_mean_ndc=mean(mean_ndc),
             sd_mean_ndc=sd(mean_ndc))
-improved_ndc_summaries$measure <- 'NDC Change From Raw'
+improved_ndc_summaries$measure <- 'NDC Change\nFrom Raw'
 ndc_summaries <- qc_df %>%
   group_by(denoising, scheme, method, percent_motion) %>%
   summarise(mean_ndc=mean(ndc.corrected), 
@@ -1006,49 +1036,41 @@ ndc_summaries <- qc_df %>%
             se_ndc=sd_ndc/sqrt(length(ndc.corrected)),
             group_mean_ndc=mean(mean_ndc),
             sd_mean_ndc=sd(mean_ndc))
-ndc_summaries$measure <- 'Mean Preprocessed NDC'
+ndc_summaries$measure <- 'Preprocessed NDC'
 qc_summaries <- rbind(ndc_summaries, improved_ndc_summaries)
 qc_summaries$percent_motion <- as.factor(qc_summaries$percent_motion)
+qc_summaries$measure <- factor(qc_summaries$measure, levels=c('Preprocessed NDC', 'NDC Change\nFrom Raw'))
 
 ```
 
 ```{r}
-pd=position_dodge(width=0.7, preserve="single")
-linetypes = c("None" = 1, "MP-PCA" = 2)
+pd=position_dodge(width=0.6, preserve="single")
 ndc_mean_plt <-  
   ggplot(
     qc_summaries,
     aes(
       y=group_mean_ndc, x=percent_motion, 
-      color=method, fill=method)
+      fill=method, group=interaction(method, denoising))
     ) +
-  geom_bar(aes(linetype=denoising), stat="identity", position=pd, width = 0.6) +
+  geom_bar(aes(alpha=denoising), stat="identity", position=pd, width = 0.6) +
   geom_errorbar(
     aes(ymax=group_mean_ndc+sd_ndc, ymin=group_mean_ndc-sd_ndc,
-        linetype=denoising,
-        width=0.7),
+        width=0.6),
     color = "black", position=pd
     ) +
-  facet_grid(measure~scheme, scales="free") + 
-  scale_color_manual(
-    values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77"), guide="none"
-    ) +
+  facet_grid(measure~scheme, scales="free") +
   scale_fill_manual(
     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")
     ) +
-  scale_linetype_manual(
+  scale_alpha_manual(
     name="Denoising Strategy",
-    values=linetypes
+    values=c(1.0, 0.5)
     ) +
   theme_bw(
-    base_family="Times",
-    base_size=16
+    base_family="Helvetica",
+    base_size=12
   ) +
-  labs(title = "Motion Estimate RMSE",
-       y = "Mean RMSE (±SD)", 
-       x = "Percent Motion Volumes", 
-       fill = "Method",
-       ) +
+  theme(strip.text.y = element_text(size = 8)) +
   labs(title = "QC Measure", 
        y = "Neighboring DWI Correlation", 
        x = "Percent Motion Volumes",
@@ -1066,7 +1088,7 @@ ndc_mean_plt
 ```{r}
 ggsave(here("vignettes","ndc_mean_plot.svg"),
        plot=ndc_mean_plt,
-       height=3,
+       height=3.5,
        width=7.9,
        units="in")
 ```
