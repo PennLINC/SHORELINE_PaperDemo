@@ -57,7 +57,6 @@ data("error_rmse_wsetting") # for analysis of estimated motion
 The table below shows the number of `b0`'s for each scheme:
 
 ```{r}
-# QUESTION the Num b > 1 seem to be slightly higher and lower than table 1
 motion_df %>%
   filter(
     iternum == 1 &
@@ -647,13 +646,26 @@ error_rmse_dirs$percent_motion <- with(
   error_rmse_dirs,
   as.numeric(levels(percent_motion))[percent_motion])
 
+error_rmse_dirs <- error_rmse_dirs %>%
+  # make it presentable for the table
+  mutate(
+    Denoising = case_when(
+      denoising == "dwidenoise"  ~ "MP-PCA",
+      TRUE                       ~ "None"
+    ),
+    `Scheme Type` = scheme_type,
+    `% Motion` = percent_motion,
+    RMSE = rmse,
+    `N. Directions` = num_directions
+  )
+
 # run lm
 rotation_shell_model <- lm(
-  rmse ~ scheme_type * num_directions + denoising + percent_motion,
+  RMSE ~ `Scheme Type` * `N. Directions` + Denoising + `% Motion`,
   data=subset(error_rmse_dirs, motion.type=="Rotation"))
 
 translation_shell_model <- lm(
-  rmse ~ scheme_type * num_directions + denoising + percent_motion,
+  RMSE ~ `Scheme Type` * `N. Directions`+ Denoising + `% Motion`,
   data=subset(error_rmse_dirs, motion.type=="Translation"))
 
 ```
@@ -682,15 +694,32 @@ rotation_rmse_tab <- tbl_regression(
 
 
 ```{r}
+
+capt <- "**Supplementary Listing 1: _Factors Impacting RMSE Following Head Motion Correction_**. Error following motion correction is largely due to uncontrolled factors (presupposed head motion), preprocessing choices (use of denoising), and experimental design (sampling scheme)."
+
 # merge and display
 
 rmse_model_table <- tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab_spanner = c("Translation", "Rotation")) %>%
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
-  tab_header(title = "RMSE of Predicted Motion",
-             subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme") %>%
-  #tab_source_note(md("*This data is simulated*")) %>%
-  opt_table_font("Helvetica")
+  tab_header(title = "Predicting RMSE of Estimated Motion",
+             subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme Type") %>%
+  tab_source_note(md(capt)) %>%
+  tab_style(
+    style = cell_text(
+      size = "large"
+    ),
+    locations = cells_source_notes()
+  ) %>%
+  opt_table_font("Times New Roman")
+  
+  
+
+rmse_model_table
+```
+
+```{r}
+# save
 rmse_model_table %>% gtsave("rmse_model.pdf", zoom=1)
 ```
 
@@ -711,16 +740,26 @@ paired_error <- error_rmse %>%
   filter(scheme %in% c("ABCD", "HCP")) %>%
   spread(method, rmse, sep="_") %>% 
   group_by(scheme, motion.type) %>% 
-  mutate(shore_difference=method_Eddy - method_SHORELine,
-         percent_motion=as.numeric(levels(percent_motion))[percent_motion])
+  mutate(shore_difference=method_Eddy - method_SHORELine) %>%
+  
+  # make it presentable for the table
+  mutate(
+    Denoising = case_when(
+      denoising == "dwidenoise"  ~ "MP-PCA",
+      TRUE                       ~ "None"
+    ),
+    Scheme = scheme,
+    `Motion Type` = motion.type,
+    `% Motion` = as.numeric(levels(percent_motion))[percent_motion]
+  )
 
 rotation_rmse_model_paired <- lm(
-  shore_difference ~ scheme * denoising * percent_motion,
-  data=subset(paired_error, motion.type=="Rotation"))
+  shore_difference ~ Scheme * Denoising * `% Motion`,
+  data=subset(paired_error, `Motion Type`=="Rotation"))
 
 translation_rmse_model_paired <- lm(
-  shore_difference ~ scheme * denoising * percent_motion,
-  data=subset(paired_error, motion.type=="Translation"))
+  shore_difference ~ Scheme * Denoising * `% Motion`,
+  data=subset(paired_error, `Motion Type`=="Translation"))
 ```
 
 ```{r}
@@ -745,16 +784,31 @@ rotation_rmse_paired_tab <- tbl_regression(
 
 
 ```{r}
+capt <- "**Supplementary Listing 2: _Comparing Eddy & SHORELine RMSE_**. The SHORELine RMSE value was subtracted from the Eddy RMSE from each simulated scan, and this difference was the outcome variable of the model. Positive Beta estimates suggest better performance by SHORELine. SHORELine shows less error than Eddy for all scenarios without denoising, but Eddy showed slightly superior performence when data was first denoised with MP-PCA."
+
 tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spanner = c("Translation", "Rotation")) %>%
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Predicting RMSE Difference (Eddy — SHORELine) in ABCD & HCP Schemes",
              subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme") %>%
-  tab_source_note(md("*This data is simulated*")) %>%
-  tab_footnote(escape_latex(md("The SHORELine RMSE value was subtracted from the Eddy RMSE from each simulated scan, and this difference was the outcome variable of the model. Positive Beta estimates suggest better performance by SHORELine.")),
-               locations = cells_title("title")) %>%
-  opt_table_font("Times New Roman")
+  tab_source_note(md(capt)) %>%
+  tab_style(
+    style = cell_text(
+      size = "large"
+    ),
+    locations = cells_source_notes()
+  ) %>% 
+  opt_table_font("Times New Roman") -> rmse_difference_table
 ```
+
+```{r}
+rmse_difference_table
+```
+
+```{r}
+rmse_difference_table %>% gtsave("rmse_diff_model.pdf", zoom=1)
+```
+
 
 We plot the RMSE differences:
 
@@ -989,13 +1043,25 @@ paired_fwhm <- qc_df %>%
   spread(method, fwhm, sep="_") %>%
   mutate(fwhm_diff=method_SHORELine - method_Eddy,
          percent_motion = as.factor(percent_motion)) %>%
-  select(-starts_with("method_"))
+  select(-starts_with("method_")) %>%
+  
+  # make it presentable for the table
+  mutate(
+    Denoising = denoising,
+    Scheme = scheme,
+    `% Motion` = percent_motion
+  )
+  
+  
 fwhm_diff_model <- lm(
-  fwhm_diff ~ percent_motion + scheme + denoising,
+  fwhm_diff ~ `% Motion` + Scheme + Denoising,
   data=paired_fwhm)
 ```
 
 ```{r}
+
+capt <- "**Supplementary Listing 3: Evaluating Smoothness of Preprocessed Data Following Head Motion Correction Quantified by FWHM.** The SHORELine FWHM value was subtracted from the Eddy FWHM, and this difference was the outcome variable of the model. Across all sampling schemes and method correction methods, more motion is associated with greater smoothness in output images. SHORELine produced significantly sharper outputs than Eddy."
+
 tbl_regression(
   fwhm_diff_model,
   intercept=TRUE,
@@ -1005,9 +1071,15 @@ tbl_regression(
   bold_labels() %>% 
   italicize_levels() %>%
   as_gt() %>%
-  tab_header(title = "Linear Model Predicting FWHM (Eddy — Shoreline) of Each Scan",
+  tab_header(title = "Predicting FWHM (Eddy — Shoreline) of Each Scan",
              subtitle = "Main Effects of Percent Motion, Scheme, and Denoising") %>%
-  tab_source_note(md("*This data is simulated*")) %>%
+  tab_source_note(md(capt)) %>%
+  tab_style(
+    style = cell_text(
+      size = "large"
+    ),
+    locations = cells_source_notes()
+  ) %>% 
   opt_table_font("Times New Roman")
   
 ```
