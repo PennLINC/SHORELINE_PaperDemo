@@ -78,7 +78,7 @@ rownames(tab1) <- c("Type", "Max. b", "Num. b > 0")
 
 gt(tab1, rownames_to_stub = TRUE) %>%
   tab_header("Scheme properties and processing pipeline runs") %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 
 ```
 
@@ -112,7 +112,7 @@ motion_df %>%
     label = "SHORELine",
     rows = 13:24
   ) %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
   
 ```
 
@@ -133,7 +133,7 @@ motion_df %>%
   summarise(across(ABCD:HASC55,sum)) %>%
   gt() %>%
   tab_header("Total Scans") %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 ```
 
 
@@ -147,7 +147,7 @@ motion_df %>%
   row_to_names(1) %>%
   data.frame() %>%
   gt(rownames_to_stub = TRUE) %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 ```
 
 Note that errors for rotation are converted from radians to degrees, and
@@ -171,7 +171,7 @@ for Eddy it means Linear - Quadratic.
 ```{r check_setting}
 # TODO put these long functions into a function
 
-# TODO times new roman in the header and stub
+# TODO Helvetica in the header and stub
 
 setting_tests <- error_rmse_wsetting %>%
   rename(hmc_method=method) %>%
@@ -267,7 +267,7 @@ setting_tests_gt %>%
   ) %>%
   tab_style(
     style = list(
-      cell_text(font = "Times New Roman")
+      cell_text(font = "Helvetica")
       ),
     locations = cells_body(
       columns = everything(),
@@ -288,7 +288,7 @@ setting_tests_gt %>%
   ) %>%
   tab_header(md("**Predicting RMSE of Motion Estimates**"),
              subtitle = "Evaluation of Effects on Transformation") %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 ```
 
 
@@ -496,7 +496,7 @@ errs <- error_rmse %>% group_by(motion.type) %>%
 errs %>%
   gt() %>%
   tab_header("Mean RMSE by Motion Type") %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 ```
 
 ## 3. Compare Performance on Sampling Schemes
@@ -704,14 +704,14 @@ rmse_model_table <- tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Predicting RMSE of Estimated Motion",
              subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme Type") %>%
-  tab_source_note(md(capt)) %>%
-  tab_style(
-    style = cell_text(
-      size = "large"
-    ),
-    locations = cells_source_notes()
-  ) %>%
-  opt_table_font("Times New Roman")
+  # tab_source_note(md(capt)) %>%
+  # tab_style(
+  #   style = cell_text(
+  #     size = "large"
+  #   ),
+  #   locations = cells_source_notes()
+  # ) %>%
+  opt_table_font("Helvetica")
   
   
 
@@ -791,14 +791,14 @@ tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spann
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Predicting RMSE Difference (Eddy — SHORELine) in ABCD & HCP Schemes",
              subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme") %>%
-  tab_source_note(md(capt)) %>%
-  tab_style(
-    style = cell_text(
-      size = "large"
-    ),
-    locations = cells_source_notes()
-  ) %>% 
-  opt_table_font("Times New Roman") -> rmse_difference_table
+  # tab_source_note(md(capt)) %>%
+  # tab_style(
+  #   style = cell_text(
+  #     size = "large"
+  #   ),
+  #   locations = cells_source_notes()
+  # ) %>% 
+  opt_table_font("Helvetica") -> rmse_difference_table
 ```
 
 ```{r}
@@ -969,7 +969,7 @@ setting_tests_gt %>%
       ),
     locations = cells_column_labels(columns = everything())
   ) %>%
-  opt_table_font("Times New Roman")
+  opt_table_font("Helvetica")
 ```
 
 Recall here we're testing NDC, which is better when higher. The t-tests work 
@@ -1073,14 +1073,14 @@ tbl_regression(
   as_gt() %>%
   tab_header(title = "Predicting FWHM (Eddy — Shoreline) of Each Scan",
              subtitle = "Main Effects of Percent Motion, Scheme, and Denoising") %>%
-  tab_source_note(md(capt)) %>%
-  tab_style(
-    style = cell_text(
-      size = "large"
-    ),
-    locations = cells_source_notes()
-  ) %>% 
-  opt_table_font("Times New Roman") -> fwhm_model
+  # tab_source_note(md(capt)) %>%
+  # tab_style(
+  #   style = cell_text(
+  #     size = "large"
+  #   ),
+  #   locations = cells_source_notes()
+  # ) %>% 
+  opt_table_font("Helvetica") -> fwhm_model
 
 ```
 
@@ -1226,7 +1226,13 @@ tbl_regression(
   italicize_levels() %>%
   as_gt() %>%
   tab_header(title = "NDC Model") %>%
-  tab_source_note(md("*This data is simulated*")) %>%
-  opt_table_font("Times")
+  #tab_source_note(md("*This data is simulated*")) %>%
+  opt_table_font("Helvetica") -> ndc_table
+
+ndc_table
+```
+
+```{r}
+ndc_table %>% gtsave(here("figures", "ndc_model.pdf"), vwidth=250, vheight=100)
 ```
 
