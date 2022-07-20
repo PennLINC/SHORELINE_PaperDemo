@@ -210,7 +210,8 @@ setting_tests_adj %>%
   # insert empty strings for every group where the values are duplicated
   # for clarity
   
-  mutate(across(where(is.factor), as.character)) %>%  
+  mutate(across(where(is.factor), as.character)) %>%
+  mutate(percent_motion=paste0(percent_motion,"%")) %>%
   group_by(Method, Scheme, Denoising) %>%
   mutate_at(vars(Method:Denoising), ~ replace(.x, duplicated(.x), "")) %>%
   ungroup() %>%
@@ -255,7 +256,7 @@ setting_tests_gt %>%
     estimate_Translation = md("Estimate"),
     statistic_Rotation = md("Statistic"),
     statistic_Translation = md("Statistic"),
-    percent_motion = md("% Motion")
+    percent_motion = md("Motion Prevalence")
   ) %>%
   
   data_color(
@@ -357,7 +358,7 @@ pd=position_dodge2(width=0.7, preserve="single")
 linetypes = c("None" = 1, "MP-PCA" = 2)
 
 error_mean_plt <-  ggplot(
-    rmse_summaries,
+    rmse_summaries %>% mutate(percent_motion=paste0(percent_motion, "%")),
     aes(
       y=group_mean_error, x=percent_motion, 
       fill=method, group=Denoising)
@@ -386,7 +387,7 @@ error_mean_plt <-  ggplot(
   ) +
   labs(title = "Head Motion Estimate Error", 
        y = "Mean Error (±Mean RMSE)", 
-       x = "Percent Motion Volumes", 
+       x = "Motion Prevalence", 
        fill = "Method"
        ) +
   guides(linetype=guide_legend(override.aes=list(fill=NA)))
@@ -435,7 +436,7 @@ error_mean_plt
 
 
 rmse_plt <-  ggplot(
-    rmse_summaries,
+    rmse_summaries %>% mutate(percent_motion=paste0(percent_motion, "%")),
     aes(
       y=mean_rmse, x=percent_motion, 
       fill=method, group=Denoising)
@@ -460,7 +461,7 @@ rmse_plt <-  ggplot(
   ) +
   labs(title = "Motion Estimate RMSE",
        y = "Mean RMSE (±SD)", 
-       x = "Percent Motion Volumes", 
+       x = "Motion Prevalence", 
        fill = "Method",
        ) +
   guides(linetype=guide_legend(override.aes=list(fill=NA)))
@@ -565,7 +566,7 @@ rmse_summaries_collapsed %>%
   mutate(
     motion.type = case_when(
       str_detect(motion.type, "Rotation")     ~ "Rotation (degrees)",
-      str_detect(motion.type, "Translation")  ~ "Tranlation (mm)",
+      str_detect(motion.type, "Translation")  ~ "Translation (mm)",
     )
   ) -> rmse_summaries_collapsed
 # rmse_summaries_collapsed$motion.type <- recode(
@@ -654,18 +655,27 @@ error_rmse_dirs <- error_rmse_dirs %>%
       TRUE                       ~ "None"
     ),
     `Scheme Type` = scheme_type,
-    `% Motion` = percent_motion,
+    `Motion Prevalence` = percent_motion,
     RMSE = rmse,
-    `N. Directions` = num_directions
+    `N. Directions` = num_directions,
+    Method = method
   )
 
 # run lm
+# rotation_shell_model <- lm(
+#   RMSE ~ Method + `Scheme Type` * `N. Directions` + Denoising + `Motion Prevalence`,
+#   data=subset(error_rmse_dirs, motion.type=="Rotation"))
+# 
+# translation_shell_model <- lm(
+#   RMSE ~ Method + `Scheme Type` * `N. Directions`+ Denoising + `Motion Prevalence`,
+#   data=subset(error_rmse_dirs, motion.type=="Translation"))
+
 rotation_shell_model <- lm(
-  RMSE ~ `Scheme Type` * `N. Directions` + Denoising + `% Motion`,
+  RMSE ~ `Scheme Type` * `N. Directions` + Denoising + `Motion Prevalence`,
   data=subset(error_rmse_dirs, motion.type=="Rotation"))
 
 translation_shell_model <- lm(
-  RMSE ~ `Scheme Type` * `N. Directions`+ Denoising + `% Motion`,
+  RMSE ~ `Scheme Type` * `N. Directions`+ Denoising + `Motion Prevalence`,
   data=subset(error_rmse_dirs, motion.type=="Translation"))
 
 ```
@@ -703,7 +713,8 @@ rmse_model_table <- tbl_merge(list(translation_rmse_tab, rotation_rmse_tab), tab
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Predicting RMSE of Estimated Motion",
-             subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme Type") %>%
+             #subtitle = "Main Effects of Denoising, Number of Directions, and Percent Motion, including interactions with Shell Scheme Type"
+             ) %>%
   # tab_source_note(md(capt)) %>%
   # tab_style(
   #   style = cell_text(
@@ -720,7 +731,7 @@ rmse_model_table
 
 ```{r}
 # save
-rmse_model_table %>% gtsave(here("figures", "rmse_model.pdf"), zoom=1)
+rmse_model_table %>% gtsave(here("figures", "rmse_model_nomethod.pdf"), zoom=1)
 ```
 
 A couple interesting results come out here along with some obvious ones. First,
@@ -750,15 +761,15 @@ paired_error <- error_rmse %>%
     ),
     Scheme = scheme,
     `Motion Type` = motion.type,
-    `% Motion` = as.numeric(levels(percent_motion))[percent_motion]
+    `Motion Prevalence` = as.numeric(levels(percent_motion))[percent_motion]
   )
 
 rotation_rmse_model_paired <- lm(
-  shore_difference ~ Scheme * Denoising * `% Motion`,
+  shore_difference ~ Scheme * Denoising * `Motion Prevalence`,
   data=subset(paired_error, `Motion Type`=="Rotation"))
 
 translation_rmse_model_paired <- lm(
-  shore_difference ~ Scheme * Denoising * `% Motion`,
+  shore_difference ~ Scheme * Denoising * `Motion Prevalence`,
   data=subset(paired_error, `Motion Type`=="Translation"))
 ```
 
@@ -790,7 +801,8 @@ tbl_merge(list(translation_rmse_paired_tab, rotation_rmse_paired_tab), tab_spann
   as_gt() %>%
   fmt_number(n_sigfig = 2, matches("Beta"), force_sign = TRUE) %>%
   tab_header(title = "Predicting RMSE Difference (Eddy — SHORELine) in ABCD & HCP Schemes",
-             subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme") %>%
+             #subtitle = "Main Effects of Denoising & Percent Motion, and interactions with Shell Scheme"
+             ) %>%
   # tab_source_note(md(capt)) %>%
   # tab_style(
   #   style = cell_text(
@@ -817,7 +829,7 @@ We plot the RMSE differences:
 paired_error$percent_motion <- factor(paired_error$percent_motion)
 
 ggplot(paired_error, 
-       aes(x=as.factor(percent_motion), 
+       aes(x=paste0(percent_motion, "%"), 
            y=shore_difference,
            fill=denoising)) +
   geom_hline(yintercept = 0) +
@@ -832,14 +844,18 @@ ggplot(paired_error,
   labs(
     title = "Difference in Estimation Error (Eddy - SHORELine)",
     y = "Estimation Error Difference",
-    x = "Percent Motion Volumes",
+    x = "Motion Prevalence",
     fill="Denoising\nMethod")
 
+ggsave(here("vignettes","estimation_error_difference.svg"),
+       height=3,
+       width=7.9,
+       units="in")
 ```
 
 ```{r}
 ggplot(paired_error, 
-       aes(x=as.factor(percent_motion), 
+       aes(x=paste0(percent_motion,"%"), 
            y=shore_difference,
            fill=denoising)) +
   stat_halfeye(
@@ -868,7 +884,7 @@ ggplot(paired_error,
   labs(
     title = "Differences in Estimate Error (Eddy - SHORELine)",
     y = "Estimation Error Difference",
-    x = "Percent Motion Volumes",
+    x = "Motion Prevalence",
     fill="Denoising\nMethod")
 ```
 
@@ -994,7 +1010,7 @@ qc_df <- qc_df %>%
 ## 2. How does the fwhm compare?
 
 ```{r fwhm_plot}
-fwhm_smooth_plot <- qc_df %>%
+fwhm_smooth_plot <- qc_df %>% mutate(percent_motion=paste0(percent_motion,"%")) %>%
   ggplot(aes(x=factor(percent_motion), y=fwhm, fill=method)) +
   stat_halfeye(
     justification = -.2,
@@ -1007,16 +1023,15 @@ fwhm_smooth_plot <- qc_df %>%
     alpha = 0.8,
     outlier.shape = NA ## `outlier.shape = NA` works as well
   ) +
-
   scale_fill_manual(
     values=c("SHORELine"="#d95f02", "Eddy"="#1b9e77")) +
   theme_bw(
-    base_family="Times",
+    base_family="Helvetica",
     base_size=12
   ) +
   labs(title = "Spatial Smoothness (FWHM)", 
        y = "FWHM (mm)", 
-       x = "Percent Motion Volumes", 
+       x = "Motion Prevalence", 
        fill = "Method") +
   facet_wrap(~scheme, ncol=2)
 ```
@@ -1042,19 +1057,19 @@ paired_fwhm <- qc_df %>%
   select(one_of(c(id_cols, "fwhm"))) %>%
   spread(method, fwhm, sep="_") %>%
   mutate(fwhm_diff=method_SHORELine - method_Eddy,
-         percent_motion = as.factor(percent_motion)) %>%
+         percent_motion = as.factor(paste0(percent_motion, "%"))) %>%
   select(-starts_with("method_")) %>%
   
   # make it presentable for the table
   mutate(
     Denoising = denoising,
     Scheme = scheme,
-    `% Motion` = percent_motion
+    `Motion Prevalence` = percent_motion
   )
   
   
 fwhm_diff_model <- lm(
-  fwhm_diff ~ `% Motion` + Scheme + Denoising,
+  fwhm_diff ~ `Motion Prevalence` + Scheme + Denoising,
   data=paired_fwhm)
 ```
 
@@ -1072,7 +1087,8 @@ tbl_regression(
   italicize_levels() %>%
   as_gt() %>%
   tab_header(title = "Predicting FWHM (Eddy — Shoreline) of Each Scan",
-             subtitle = "Main Effects of Percent Motion, Scheme, and Denoising") %>%
+             #subtitle = "Main Effects of Percent Motion, Scheme, and Denoising"
+             ) %>%
   # tab_source_note(md(capt)) %>%
   # tab_style(
   #   style = cell_text(
@@ -1127,7 +1143,7 @@ qc_summaries$measure <- factor(qc_summaries$measure, levels=c('Preprocessed NDC'
 pd=position_dodge(width=0.6, preserve="single")
 ndc_mean_plt <-  
   ggplot(
-    qc_summaries,
+    qc_summaries %>% mutate(percent_motion=paste0(percent_motion, "%")),
     aes(
       y=group_mean_ndc, x=percent_motion, 
       fill=method, group=interaction(method, denoising))
@@ -1153,7 +1169,7 @@ ndc_mean_plt <-
   theme(strip.text.y = element_text(size = 8)) +
   labs(title = "QC Measure", 
        y = "Neighboring DWI Correlation", 
-       x = "Percent Motion Volumes",
+       x = "Motion Prevalence",
        fill = "Method"
        ) +
   guides(linetype=guide_legend(override.aes=list(fill=NA)))
@@ -1213,11 +1229,11 @@ paired_ndc <- qc_df %>%
   mutate(
     Denoising = denoising,
     Scheme = scheme,
-    `% Motion` = percent_motion
+    `Motion Prevalence` = percent_motion
   )
 
 ndc_diff_model <- lm(
-  ndc_diff ~ `% Motion` + Denoising + Scheme,
+  ndc_diff ~ `Motion Prevalence` + Denoising + Scheme,
   data=paired_ndc)
 ```
 
